@@ -1,0 +1,3 @@
+[submodule "external/waymo_motion_scenario_mining"]
+	path = external/waymo_motion_scenario_mining
+	url = https://github.com/Patrone411/waymo_motion_scenario_mining.git
