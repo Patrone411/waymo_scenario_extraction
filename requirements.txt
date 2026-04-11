@@ -1,0 +1,5 @@
+pyspark==3.3.2
+protobuf==3.19.6
+tensorflow==2.11.1
+
+
