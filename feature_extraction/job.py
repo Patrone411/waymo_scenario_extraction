@@ -43,7 +43,9 @@ def test_partition(paths):
         for example in load_tfrecord(path):
 
             try:
-                result = process_scenario(example)
+                scenario = Scenario(example)
+                scenario.setup()                
+                result = process_scenario(scenario)
                 print(result)
                 if result is None:
                     continue
@@ -61,16 +63,9 @@ def test_partition(paths):
 # -----------------------------
 if __name__ == "__main__":
 
-    dataset = tf.data.TFRecordDataset("data/tfexample.tfrecord-00000-of-01000")
+    
 
-    for raw in dataset:
-        example = parse_example(raw)
-        scenario = Scenario(example)
-        scenario.setup()
-        result = process_scenario(scenario)
-        print(result)
-
-    """spark = SparkSession.builder \
+    spark = SparkSession.builder \
         .master("local[*]") \
         .appName("scenario-construction-test") \
         .getOrCreate()
@@ -93,4 +88,4 @@ if __name__ == "__main__":
 
     out.show(truncate=False)
 
-    spark.stop()"""
+    spark.stop()

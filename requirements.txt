@@ -1,4 +1,6 @@
 geopandas
+behave
+poetry
 boto3==1.37.38
 matplotlib==3.6.1
 networkx==2.8
@@ -7,3 +9,4 @@ scipy==1.9.1
 Shapely== 2.0.7
 smart_open==7.3.0.post1
 tensorflow==2.13.0
+pyspark
