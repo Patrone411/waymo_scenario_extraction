@@ -1,11 +1,8 @@
-from feature_extraction.tools.scenario import Scenario
 from feature_extraction.tools.scenario_processor import result_dict_from_scenario   # <-- anpassen!
 
 
-def process_scenario(example):
+def process_scenario(scenario):
 
-    scenario = Scenario(example)
-    print("scenario insantiated")
-    result = result_dict_from_scenario(scenario, debug=False)
+    result = result_dict_from_scenario(scenario, debug=True)
 
     return result

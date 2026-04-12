@@ -46,7 +46,7 @@ def process_inter_actor_activities(condensed_actors, debug: bool = False):
 
 def process_road_segments(lane_graph, road_segs, debug:bool = False):
     if debug:print("segments processing start ")
-    processed_segs = run_for_all_segments(lane_graph, road_segs, show_plot=True)
+    processed_segs = run_for_all_segments(lane_graph, road_segs, show_plot=False)
     if debug:print("segments processing done ")
 
     return processed_segs
@@ -77,7 +77,6 @@ def result_dict_from_scenario(scenario, debug:bool = True):
 
 
     actors = per_actor_minimal(parsed, eval_mode=False) # gets minimal preprocessed actor data from waymo data
-   
     condensed = kept_actors_from_per_actor_minimal(road_segments=road_segs, per_actor=actors, min_steps=5) #filters out actors present in road segments
 
     inter_actor_activities = process_inter_actor_activities(condensed, debug=debug)
@@ -94,5 +93,4 @@ def result_dict_from_scenario(scenario, debug:bool = True):
     "segment_env_elements": per_segment_env,
     "processed_road_segments": processed_segs,
     }
-    result_dict = {}
     return result_dict

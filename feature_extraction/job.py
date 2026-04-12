@@ -1,5 +1,7 @@
 from pyspark.sql import SparkSession
 from feature_extraction.pipeline import process_scenario
+from feature_extraction.tools.scenario import Scenario
+
 from feature_extraction.tools.scenario import features_description
 import tensorflow as tf
 import os
@@ -42,12 +44,11 @@ def test_partition(paths):
 
             try:
                 result = process_scenario(example)
-
+                print(result)
                 if result is None:
                     continue
 
                 yield {
-                    "scene_id": result["scene_id"],
                     "data": result   # 🔥 GANZES DICT
                 }
 
@@ -60,7 +61,16 @@ def test_partition(paths):
 # -----------------------------
 if __name__ == "__main__":
 
-    spark = SparkSession.builder \
+    dataset = tf.data.TFRecordDataset("data/tfexample.tfrecord-00000-of-01000")
+
+    for raw in dataset:
+        example = parse_example(raw)
+        scenario = Scenario(example)
+        scenario.setup()
+        result = process_scenario(scenario)
+        print(result)
+
+    """spark = SparkSession.builder \
         .master("local[*]") \
         .appName("scenario-construction-test") \
         .getOrCreate()
@@ -83,4 +93,4 @@ if __name__ == "__main__":
 
     out.show(truncate=False)
 
-    spark.stop()
+    spark.stop()"""
