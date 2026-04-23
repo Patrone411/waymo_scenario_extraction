@@ -393,7 +393,6 @@ def run_one_prefix(
         )
 
         engine.set_features(res.feats_by_seg, res.seg_meta_by_id)
-        print("engine feats by seg: ", engine.h.feats_by_seg)
         print("\n=== SEGMENT FEATURES PROBE ===")
         for seg_id, feats in res.feats_by_seg.items():
             print(f"\n  [{seg_id}]")
@@ -426,6 +425,45 @@ def run_one_prefix(
             for (seg_id, rk), bs in list((hitmap or {}).items())[:2]:
                 print(f"    seg={seg_id} rk={rk}")
                 print(f"    bs attrs: {[a for a in vars(bs) if not a.startswith('_')]}")
+
+
+
+        print("\n=== BINDING CHECK DIAGNOSTIC ===")
+        # greife auf interne check-ergebnisse zu
+        for block_label, atomic_bucket in (batch.atomic.by_call or {}).items():
+            print(f"\nblock/call: {block_label}")
+            for bs in (atomic_bucket or [])[:3]:  # erste 3 bindings
+                seg_id = getattr(bs, "segment_id", "?")
+                roles  = dict(getattr(bs, "roles", {}) or {})
+                checks = getattr(bs, "check_results", None) or getattr(bs, "mod_stats", None)
+                print(f"  seg={seg_id} roles={roles}")
+                if checks:
+                    for check_name, result in (checks.items() if hasattr(checks, 'items') else []):
+                        print(f"    check '{check_name}': {result}")
+                else:
+                    print(f"    no check_results — attrs: {[a for a in vars(bs) if not a.startswith('_')]}")
+
+                # check speed values for ego role
+                ego_id = roles.get("ego_vehicle")
+                if ego_id:
+                    feats = res.feats_by_seg.get(seg_id)
+                    if feats:
+                        spd = feats.speed.get(ego_id)
+                        if spd is not None:
+                            import numpy as np
+                            arr = np.asarray(spd)
+                            finite = arr[np.isfinite(arr)]
+                            print(f"    ego speed: min={finite.min():.2f} max={finite.max():.2f} mean={finite.mean():.2f} n_finite={len(finite)}/91")
+                            # speed in km/h check (matcher expects m/s, data might be m/s already)
+                            print(f"    speed unit check: mean={finite.mean():.2f} (expect ~8-15 m/s for cars, not 30-120)")
+                        
+                        lane = feats.lane_idx.get(ego_id)
+                        if lane is not None:
+                            import numpy as np
+                            arr = np.asarray(lane, dtype=float)
+                            finite = arr[np.isfinite(arr)]
+                            print(f"    ego lane_idx: unique={np.unique(finite).tolist()[:10]} n_finite={len(finite)}/91")
+
 
 
         bh = batch.block_hits or {}
