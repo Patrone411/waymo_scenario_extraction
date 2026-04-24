@@ -239,7 +239,7 @@ def _iter_scene(
 
     for seg_id, seg_meta in (tag_json.get("road_segments") or {}).items():
         num_lanes = int(seg_meta.get("num_lanes") or 0)
-        if min_lanes is not None and num_lanes < min_lanes:
+        if min_lanes is not None and num_lanes != min_lanes:
             continue
         try:
             feats = TagFeatures.from_tag_json(tag_json, seg_id)
