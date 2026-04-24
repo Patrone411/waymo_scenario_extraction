@@ -12,6 +12,8 @@ from feature_extraction.tools.helpers.env_elements_per_segment import process_en
 
 
 
+
+
 def env_elements_per_segment(parsed, processed_segs, debug:bool= False):
     if debug:print("environment elements start")
     env = EnvironmentElementsWaymo(parsed)
@@ -93,4 +95,7 @@ def result_dict_from_scenario(scenario, debug:bool = True):
     "segment_env_elements": per_segment_env,
     "processed_road_segments": processed_segs,
     }
-    return result_dict
+
+    if result_dict is not None:
+        return result_dict
+        

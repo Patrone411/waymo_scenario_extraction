@@ -1,2 +1,6 @@
-*pyc
 data/
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
