@@ -1,0 +1,76 @@
+# k8s/matcher-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: matcher-change-lane
+spec:
+  completions: 1000
+  parallelism: 50
+  completionMode: Indexed
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: matcher
+          image: your-registry/matcher:latest
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          env:
+            # OSC Config
+            - name: OSC_FILE
+              value: "change_lane.osc"
+            - name: FPS
+              value: "10"
+            - name: USE_SED
+              value: "true"
+            - name: BLOCK_OVERLAP
+              value: "start"
+            # Input: S3 Parquet
+            - name: INPUT_BUCKET
+              value: "your-s3-bucket"
+            - name: BASE_PREFIX_ROOT
+              value: "parquet/run-001"
+            - name: S3_ENDPOINT_URL
+              value: "https://your-s3-endpoint"
+            - name: AWS_CA_BUNDLE
+              value: "certs/IAV-CA-Bundle.pem"
+            # Shard-Verteilung
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            - name: MAX_SHARD_INDEX
+              value: "999"
+            # Output
+            - name: OUT_DIR
+              value: "/tmp/out"
+            - name: UPLOAD_RESULTS
+              value: "true"
+            - name: OUTPUT_BUCKET
+              value: "your-s3-bucket"
+            - name: OUTPUT_PREFIX
+              value: "results/change_lane/run-001"
+            # Stats
+            - name: COLLECT_PARAMS
+              value: "true"
+            - name: COLLECT_UNCOND_DENOMS
+              value: "true"
+            - name: WRITE_EXAMPLE_WINDOWS_JSONL
+              value: "true"
+            # Credentials
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key

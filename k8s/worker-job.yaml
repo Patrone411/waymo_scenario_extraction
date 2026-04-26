@@ -1,0 +1,62 @@
+# k8s/worker-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: parquet-worker-${SHARD_INDEX}
+spec:
+  completions: 1000        # eine Completion pro Shard
+  parallelism: 50          # 50 Pods gleichzeitig
+  completionMode: Indexed  # JOB_COMPLETION_INDEX = Shard-Index
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: your-registry/parquet-worker:latest
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          env:
+            # GCS Input
+            - name: GCS_BUCKET
+              value: "your-gcs-bucket"
+            - name: GCS_PREFIX
+              value: "training_tfexample"
+            - name: TOTAL_SHARDS
+              value: "1000"
+            # SHARD_INDEX kommt automatisch von Kubernetes
+            - name: SHARD_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            # S3 Output
+            - name: S3_BUCKET
+              value: "your-s3-bucket"
+            - name: S3_PREFIX
+              value: "parquet/run-001"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+            # GCS Auth (Workload Identity oder Key File)
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/secrets/gcs-key.json"
+          volumeMounts:
+            - name: gcs-key
+              mountPath: /secrets
+              readOnly: true
+      volumes:
+        - name: gcs-key
+          secret:
+            secretName: gcs-service-account-key
