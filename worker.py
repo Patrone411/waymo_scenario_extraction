@@ -87,6 +87,7 @@ SCENE_SCHEMA = pa.schema([
 # Serialisation helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def make_serializable(obj):
     """
     Recursively convert numpy / shapely / set types to plain Python so that
@@ -353,6 +354,34 @@ def stream_tfrecord(path: str):
     for raw in tf.data.TFRecordDataset(path):
         yield parse_example(raw)
 
+S3_INPUT_BUCKET = os.environ.get("S3_INPUT_BUCKET", "")
+S3_INPUT_KEY    = os.environ.get("S3_INPUT_KEY", "")
+
+def get_input_path() -> str:
+    if LOCAL_MODE:
+        name = (
+            f"training_tfexample.tfrecord"
+            f"-{SHARD_INDEX:05d}"
+            f"-of-{TOTAL_SHARDS:05d}"
+        )
+        return os.path.join(LOCAL_INPUT, name)
+
+    if S3_INPUT_KEY:
+        local_tmp = f"/tmp/shard_{SHARD_INDEX:05d}.tfrecord"
+        print(f"[shard {SHARD_INDEX}] lade s3://{S3_INPUT_BUCKET}/{S3_INPUT_KEY}", flush=True)
+        boto3.client("s3").download_file(S3_INPUT_BUCKET, S3_INPUT_KEY, local_tmp)
+        return local_tmp
+
+    # GCS Fallback
+    name = (
+        f"training_tfexample.tfrecord"
+        f"-{SHARD_INDEX:05d}"
+        f"-of-{TOTAL_SHARDS:05d}"
+    )
+    return (
+        f"gs://{GCS_BUCKET}/{GCS_PREFIX}/{name}"
+        if GCS_PREFIX else f"gs://{GCS_BUCKET}/{name}"
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Output: local or S3
@@ -400,7 +429,7 @@ def write_scene(scene_id: str, table: pa.Table, n_rows: int) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def process_shard() -> None:
-    path = gcs_path()
+    path = get_input_path()
     print(f"[shard {SHARD_INDEX}] lese {path}", flush=True)
 
     n_scenes  = 0

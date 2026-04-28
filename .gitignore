@@ -1,6 +1,15 @@
 data/
+test_output/
+test_matcher_out/
+out_local/
+/tmp/
+*.parquet
+*.tfrecord
+example_output.json
+
 # Python cache files
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+

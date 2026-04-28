@@ -922,22 +922,21 @@ modifier map.set_map_file:
 #import standard.osc
 
 scenario top:
-    ego_vehicle: vehicle
-    other_car: vehicle
-
+    path: path                    
+    path.min_lanes(2)              
+    ego_vehicle: vehicle           
+    npc: vehicle                    
 
     do serial:
-        overtake: parallel(duration: [2s..9s]):
-
-            ego_vehicle.drive() with:
-                lane(-1)
-                speed([1kph..150kph])
+        change_lane: parallel(duration: [4s..9s]):
+            ego_vehicle.drive(path) with:
+                speed([30kph..120kph])
+                lane(-1, at: start)
                 keep_lane()
-            other_car.drive() with:
-                speed([1kph..150kph])
-
+            npc.drive(path) with:
+                speed([30kph..120kph])
+                position([5m..50m], ahead_of: ego_vehicle, at: start)
                 lane(-2, at: start)
-                position([1m..100m], behind: ego_vehicle, at: start)
-                lane(same_as: ego_vehicle, at: end)
-                position([1m..100m], ahead_of: ego_vehicle, at: end)
-
+                change_lane(1, side: left)
+                lane(same_as: ego_vehicle, at: end)              
+                position([5m..50m], ahead_of: ego_vehicle, at: end)
