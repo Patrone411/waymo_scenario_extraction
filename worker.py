@@ -2,7 +2,7 @@
 """
 worker.py
 
-Reads one TFRecord shard (from GCS or local), runs process_scenario()
+Reads one TFRecord shard (from s3 or local), runs process_scenario()
 on every example, and writes one Parquet file per scene to S3 or local disk.
 
 Environment variables
@@ -36,6 +36,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from shapely.geometry import mapping
 import tensorflow as tf
+import boto3
 
 from feature_extraction.pipeline import process_scenario
 from feature_extraction.tools.scenario import Scenario, features_description
@@ -486,10 +487,12 @@ def process_shard() -> None:
 if __name__ == "__main__":
     # Sanity-checks
     if not LOCAL_MODE:
-        if not GCS_BUCKET:
-            raise ValueError("GCS_BUCKET muss gesetzt sein wenn LOCAL_MODE=0")
         if not S3_BUCKET:
             raise ValueError("S3_BUCKET muss gesetzt sein wenn LOCAL_MODE=0")
+
+        # nur prüfen wenn wirklich GCS benutzt wird
+        if not S3_INPUT_KEY and not GCS_BUCKET:
+            raise ValueError("Entweder S3_INPUT_KEY oder GCS_BUCKET muss gesetzt sein")
 
     print(
         f"[startup] LOCAL_MODE={LOCAL_MODE} "
