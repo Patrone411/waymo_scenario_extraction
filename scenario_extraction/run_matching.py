@@ -120,7 +120,9 @@ def _safe_val(feat_dict, actor_id: str, t: int) -> Optional[float]:
 
 
 def _safe_pair(feat_dict, a: str, b: str, t: int) -> Optional[float]:
-    arr = (feat_dict or {}).get((a, b)) or (feat_dict or {}).get((b, a))
+    arr = (feat_dict or {}).get((a, b))
+    if arr is None:
+        arr = (feat_dict or {}).get((b, a))   # ← kein `or` auf Array
     if arr is None:
         return None
     try:
@@ -131,7 +133,9 @@ def _safe_pair(feat_dict, a: str, b: str, t: int) -> Optional[float]:
 
 
 def _safe_pair_str(feat_dict, a: str, b: str, t: int) -> Optional[str]:
-    arr = (feat_dict or {}).get((a, b)) or (feat_dict or {}).get((b, a))
+    arr = (feat_dict or {}).get((a, b))
+    if arr is None:
+        arr = (feat_dict or {}).get((b, a))   # ← kein `or` auf Array
     if arr is None:
         return None
     try:
@@ -470,7 +474,7 @@ def run_one_prefix(
         debug_checks=False,
     )
     cfg.use_sed           = bool(use_sed)
-    cfg.debug_pcs         = True
+    cfg.debug_pcs         = False
     cfg.first_window_only = True
 
     engine = MatchEngine(cfg=cfg, scn_constraints=scn, calls=calls)

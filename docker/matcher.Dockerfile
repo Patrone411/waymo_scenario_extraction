@@ -10,12 +10,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements_matcher.txt .
 RUN pip install --no-cache-dir -r requirements_matcher.txt
 
-# dein Code
-COPY scenario_matching/ ./scenario_matching/
-COPY osc2_parser/ ./osc2_parser/
-COPY parquet_source.py .
-COPY run_matching.py .
-COPY osc2_parser/osc/ ./osc2_parser/osc/
-COPY certs/ ./certs/
+COPY feature_extraction/ ./feature_extraction/
+COPY external/ ./external/
+COPY scenario_extraction/ ./scenario_extraction/
 
+WORKDIR /app/scenario_extraction
 CMD ["python", "run_matching.py"]
