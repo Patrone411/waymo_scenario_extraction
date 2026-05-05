@@ -437,7 +437,7 @@ def combine_parallel_block(
                     "common_first20": common[:20].tolist(),
                     "picked": (int(t1_first_common), int(t1_greedy_common)),
                 }
-                print("[BC-END]", dbg, flush=True)
+                #print("[BC-END]", dbg, flush=True)
                 # strict: example_window uses the common end
                 example_window = (int(t0), int(t1_greedy_common), int(t1_greedy_common))
                 break

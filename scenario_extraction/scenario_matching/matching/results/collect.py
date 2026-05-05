@@ -82,14 +82,14 @@ def collect_results(
       - only_call_index / only_segment_id (to inspect a pathological case)
       - slow_eval_threshold_s: only print per-binding perf when a binding exceeds threshold
     """
-    setattr(h.cfg, "debug_pcs", True)
+    setattr(h.cfg, "debug_pcs", False)
 
     store = ResultsStore()
 
     debug_domains = _flag(h.cfg, "debug_domains", False)
     debug_bindings = _flag(h.cfg, "debug_bindings", False)
-    debug_domains = True
-    debug_bindings = True
+    debug_domains = False
+    debug_bindings = False
     # Perf debug: print only slow bindings (prevents spam)
     slow_eval_threshold_s = _fnum(h.cfg, "slow_eval_threshold_s", None)  # e.g. 0.25
     slow_eval_max_print = _num(h.cfg, "slow_eval_max_print", 20)

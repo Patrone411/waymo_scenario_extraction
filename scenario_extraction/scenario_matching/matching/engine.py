@@ -83,17 +83,6 @@ class MatchEngine:
         for label, plan in plans.items():
             if getattr(plan, "type", None) == "parallel":
                 block_hits[label] = combine_parallel_block(plan, self.calls, store, T_by_seg)
-
-                if "31b62c6058ec8114" in source_uri:
-                    hm = block_hits[label] or {}
-                    keys = sorted(hm.keys(), key=lambda x: (str(x[0]), str(x[1])))
-                    print(f"[COMB] {source_uri} label={label} n={len(keys)} keys={keys[:5]}", flush=True)
-                    if keys:
-                        bs = hm[keys[0]]
-                        print(f"[COMB1] seg={getattr(bs,'segment_id',None)} roles={getattr(bs,'roles',None)} "
-                            f"T={getattr(bs,'T',None)} ex={getattr(bs,'example_window',None)} "
-                            f"n_windows={getattr(bs,'n_windows',None)} n_possible={getattr(bs,'n_possible_windows',None)}",
-                            flush=True)
         
             elif getattr(plan, "type", None) == "serial":
                 block_hits[label] = chain_serial_block(plan, self.calls, store, T_by_seg, allow_overlap=True)

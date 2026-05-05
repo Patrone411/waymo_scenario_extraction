@@ -180,12 +180,14 @@ class ParquetSource:
 
     def _list_scene_keys(self, s3) -> List[str]:
         prefix = f"{self.base_prefix}/scenes/"
+        print(f"[ParquetSource] listing s3://{self.bucket}/{prefix}", flush=True)
         paginator = s3.get_paginator("list_objects_v2")
         keys = []
         for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
             for obj in page.get("Contents") or []:
                 if obj["Key"].endswith(".parquet"):
                     keys.append(obj["Key"])
+        print(f"[ParquetSource] gefunden: {len(keys)} Parquet-Dateien", flush=True)
         return sorted(keys)
 
     def __iter__(self) -> Iterator[SceneResult]:

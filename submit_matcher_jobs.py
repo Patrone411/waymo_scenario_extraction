@@ -11,7 +11,7 @@ TOTAL_SHARDS    = 50
 OSC_FILE        = "change_lane.osc"
 RUN_ID          = "run-001"
 JOB_QUEUE       = "parquet-worker-queue"
-JOB_DEFINITION  = "matcher-worker:1"
+JOB_DEFINITION  = "matcher-worker:2"
 
 for shard_index in range(TOTAL_SHARDS):
     response = batch.submit_job(
@@ -30,6 +30,7 @@ for shard_index in range(TOTAL_SHARDS):
                 {"name": "OSC_FILE",             "value": OSC_FILE},
                 {"name": "FPS",                  "value": "10"},
                 {"name": "USE_SED",              "value": "true"},
+                # S3_ENDPOINT_URL bewusst NICHT gesetzt → Standard AWS
             ]
         },
     )

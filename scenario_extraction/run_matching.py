@@ -394,17 +394,19 @@ def _build_source(
     local: bool,
 ):
     if local:
-        resolved   = _resolve_prefix(base_prefix)
-        scenes_dir = str(resolved / "scenes")
-        print(f"[INFO] lokale Quelle: {scenes_dir}", flush=True)
-        return LocalParquetSource(scenes_dir=scenes_dir, min_lanes=min_lanes)
+        if local:
+            resolved   = _resolve_prefix(base_prefix)
+            scenes_dir = str(resolved / "scenes")
+            print(f"[INFO] lokale Quelle: {scenes_dir}", flush=True)
+            return LocalParquetSource(scenes_dir=scenes_dir, min_lanes=min_lanes)
+
 
     print(f"[INFO] S3-Quelle: s3://{bucket}/{base_prefix}/scenes/", flush=True)
     return ParquetSource(
         bucket=bucket,
         base_prefix=base_prefix,
-        endpoint_url=endpoint_url,
-        verify=verify,
+        endpoint_url=endpoint_url or None,
+        verify=verify or None,
         min_lanes=min_lanes,
     )
 
@@ -620,10 +622,10 @@ def main() -> int:
     ap.add_argument("--base_prefix",
                     default=os.getenv("BASE_PREFIX"))
     ap.add_argument("--endpoint_url",
-                    default=_env_str("S3_ENDPOINT_URL", "https://gif.s3.iavgroup.local"))
+                default=_env_str("S3_ENDPOINT_URL", ""))
     ap.add_argument("--verify",
-                    default=_env_str("S3_VERIFY_PATH",
-                                     _env_str("AWS_CA_BUNDLE", "certs/IAV-CA-Bundle.pem")))
+                default=_env_str("S3_VERIFY_PATH",
+                                 _env_str("AWS_CA_BUNDLE", "")))
     _add_bool_opt(ap, "--local",
                   default=_env_bool("LOCAL_MODE", False),
                   help="Lokale Parquet-Dateien statt S3.")
