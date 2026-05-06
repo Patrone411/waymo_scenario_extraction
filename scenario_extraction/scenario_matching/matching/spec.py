@@ -977,9 +977,18 @@ def _check_change_speed(feats, ego, npc, t0, t1, cfg, delta_speed: Dict[str, Any
     return (dv >= lo) and (dv <= hi)
 
 def _check_acceleration(feats, ego, npc, t0, t1, cfg, accel_arg: Dict[str, Any], at: Optional[str]) -> bool:
-    a = _get(feats.s_ddot, ego)
+
+    #finite-diff von s_dot
+    sdot = _get(getattr(feats, 's_dot', {}), ego)
+    if sdot.size >= 2:
+        fps = float(cfg.get('fps', 10.0))
+        a = np.concatenate([[np.nan], np.diff(sdot) * fps])
+    else:
+        return False
+
     if a.size == 0:
         return False
+    
 
     spec = _norm_physical(accel_arg or {}, "acceleration")
     lo, hi = _val_or_range_to_bounds(spec, tol=0.0)
