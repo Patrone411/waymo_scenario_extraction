@@ -1,0 +1,7 @@
+pyarrow 
+boto3 
+matplotlib 
+shapely 
+jupyter
+ipywidgets==8.1.2 
+ipympl==0.9.4
