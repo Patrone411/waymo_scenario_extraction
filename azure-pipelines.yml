@@ -16,13 +16,29 @@ steps:
 
 - checkout: self
 
-- task: Docker@2
+- task: AzureCLI@2
   displayName: 'Build and push Streamlit image'
   inputs:
-    command: buildAndPush
-    containerRegistry: 'waymo-rg-sc'
-    repository: '$(imageRepository)'
-    dockerfile: '$(dockerfilePath)'
-    tags: |
-      $(imageTag)
-      latest
+    azureSubscription: 'waymo-rg-sc'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      set -e
+
+      echo "Logging into Azure Container Registry..."
+      az acr login --name waymoregistry
+
+      echo "Building Docker image..."
+      docker build \
+        -f "$(dockerfilePath)" \
+        -t "$(containerRegistry)/$(imageRepository):$(imageTag)" \
+        -t "$(containerRegistry)/$(imageRepository):latest" \
+        "$(Build.SourcesDirectory)"
+
+      echo "Pushing image with build tag..."
+      docker push "$(containerRegistry)/$(imageRepository):$(imageTag)"
+
+      echo "Pushing latest..."
+      docker push "$(containerRegistry)/$(imageRepository):latest"
+
+      echo "Done."
