@@ -1,0 +1,28 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageRepository: 'waymo-scenario-explorer'
+  dockerfilePath: '$(Build.SourcesDirectory)/app.Dockerfile'
+  containerRegistry: 'waymoregistry.azurecr.io'
+  imageTag: '$(Build.BuildId)'
+
+steps:
+
+- checkout: self
+
+- task: Docker@2
+  displayName: 'Build and push Streamlit image'
+  inputs:
+    command: buildAndPush
+    containerRegistry: 'waymo-rg-sc'
+    repository: '$(imageRepository)'
+    dockerfile: '$(dockerfilePath)'
+    tags: |
+      $(imageTag)
+      latest
