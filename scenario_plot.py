@@ -634,3 +634,614 @@ def plot_hits_grid(
         plt.show()   # ← nur einmal hier, nicht in jedem plot_hit Aufruf
 
     return fig
+
+def plot_hit_plotly(
+    hit,
+    scenes_dir: str,
+    *,
+    show_polygons: bool = True,
+    show_reference_line: bool = True,
+    show_trajectories: bool = True,
+    show_markers: bool = True,
+):
+    """
+    Interaktive Plotly-Version von plot_hit.
+    Zoom, Pan, Hover direkt im Browser.
+    """
+    import plotly.graph_objects as go
+
+    if hasattr(hit, "to_dict"):
+        hit = hit.to_dict()
+
+    scene_id   = hit["scene_id"]
+    segment_id = hit["segment_id"]
+    t0         = int(hit["t0"])
+    t1         = int(hit["t1"])
+    roles      = json.loads(hit["roles_json"])
+    scenario   = hit.get("scenario", "")
+
+    resolved_dir = _scenes_dir_from_hit(hit, scenes_dir)
+    row    = _load_scene_row(scene_id, segment_id, resolved_dir)
+    actors = json.loads(row["actors_json"])
+
+    fig = go.Figure()
+
+    # ── Fahrbahnpolygone ──────────────────────────────────────────────────────
+    if show_polygons:
+        _poly_configs = [
+            ("target_polygon_json", "rgba(33,150,243,0.25)", "#2196F3", "target lane"),
+            ("left_polygon_json",   "rgba(76,175,80,0.20)",  "#4CAF50", "left lane"),
+            ("right_polygon_json",  "rgba(255,152,0,0.20)",  "#FF9800", "right lane"),
+        ]
+        for json_key, fill_color, line_color, name in _poly_configs:
+            geom = _parse_geom(row.get(json_key))
+            if geom is None or geom.is_empty:
+                continue
+            polys = (
+                list(geom.geoms)
+                if isinstance(geom, (MultiPolygon, GeometryCollection))
+                else [geom]
+            )
+            for i, poly in enumerate(polys):
+                if not isinstance(poly, Polygon) or poly.is_empty:
+                    continue
+                x, y = poly.exterior.xy
+                fig.add_trace(go.Scatter(
+                    x=list(x), y=list(y),
+                    fill="toself",
+                    fillcolor=fill_color,
+                    line=dict(color=line_color, width=1.5),
+                    name=name if i == 0 else None,
+                    legendgroup=name,
+                    showlegend=(i == 0),
+                    hoverinfo="skip",
+                    mode="lines",
+                ))
+
+    # ── Referenzlinie ─────────────────────────────────────────────────────────
+    if show_reference_line:
+        ref = _parse_geom(row.get("reference_line_json"))
+        if ref and not ref.is_empty:
+            x, y = ref.xy
+            fig.add_trace(go.Scatter(
+                x=list(x), y=list(y),
+                mode="lines",
+                line=dict(color="#1A237E", width=2.5, dash="solid"),
+                name="reference line",
+                hoverinfo="skip",
+            ))
+
+    # ── Akteur-Trajektorien ───────────────────────────────────────────────────
+    _plotly_role_colors = {
+        "ego_vehicle": "#2196F3",
+        "npc":         "#F44336",
+        "pedestrian":  "#FF9800",
+        "cyclist":     "#9C27B0",
+    }
+
+    t_seconds = [t / 10.0 for t in range(t0, t1 + 1)]
+
+    for role, actor_id in roles.items():
+        ts     = actors["actor_ts"].get(actor_id, {})
+        seg_ts = actors["seg_actor_ts"].get(actor_id, {})
+        color  = _plotly_role_colors.get(role, "#607D8B")
+
+        x_full   = ts.get("x")      or []
+        y_full   = ts.get("y")      or []
+        spd_full = ts.get("long_v") or []
+        s_full   = (seg_ts.get("s") or [])
+
+        x_win   = _safe_series(x_full,   t0, t1)
+        y_win   = _safe_series(y_full,   t0, t1)
+        spd_win = _safe_series(spd_full, t0, t1)
+        s_win   = _safe_series(s_full,   t0, t1)
+
+        # hover text
+        hover = [
+            f"<b>{role}</b> ({actor_id})<br>"
+            f"t={t0+i} ({t_seconds[i]:.1f}s)<br>"
+            f"x={x_win[i]:.1f}  y={y_win[i]:.1f}<br>"
+            f"speed={spd_win[i]*3.6:.1f} km/h<br>"
+            f"s={s_win[i]:.1f} m"
+            for i in range(len(x_win))
+        ]
+
+        # vollständiger Kontext (fein gestrichelt)
+        if show_trajectories:
+            x_ctx = _safe_series(x_full, 0, len(x_full) - 1)
+            y_ctx = _safe_series(y_full, 0, len(y_full) - 1)
+            fig.add_trace(go.Scatter(
+                x=list(x_ctx), y=list(y_ctx),
+                mode="lines",
+                line=dict(color=color, width=1, dash="dot"),
+                opacity=0.25,
+                name=f"{role} (context)",
+                legendgroup=role,
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+        # Matching-Fenster
+        fig.add_trace(go.Scatter(
+            x=list(x_win), y=list(y_win),
+            mode="lines+markers" if show_markers else "lines",
+            line=dict(color=color, width=3),
+            marker=dict(size=5, color=color),
+            name=f"{role} ({actor_id})",
+            legendgroup=role,
+            text=hover,
+            hovertemplate="%{text}<extra></extra>",
+        ))
+        
+        # t0 / t1 Marker
+        if show_markers:
+            for t_mark, label, symbol in [
+                (0, f"t₀={t0}", "circle"),
+                (-1, f"t₁={t1}", "square"),
+            ]:
+                if not (np.isnan(x_win[t_mark]) or np.isnan(y_win[t_mark])):
+                    fig.add_trace(go.Scatter(
+                        x=[x_win[t_mark]], y=[y_win[t_mark]],
+                        mode="markers+text",
+                        marker=dict(size=12, color=color, symbol=symbol,
+                                    line=dict(color="white", width=2)),
+                        text=[label],
+                        textposition="top center",
+                        textfont=dict(size=10, color=color),
+                        name=label,
+                        legendgroup=role,
+                        showlegend=False,
+                        hoverinfo="skip",
+                    ))
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+    duration_s = (t1 - t0) / 10.0
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"<b>{scenario}</b>  |  {scene_id}  |  {segment_id}<br>"
+                f"<sup>t₀={t0} → t₁={t1}  ({duration_s:.1f} s)  |  "
+                + "  ·  ".join(f"{k}: {v}" for k, v in roles.items())
+                + "</sup>"
+            ),
+            font=dict(size=12, color="#1a1a2e"),  # ← dunkel
+        ),
+        xaxis=dict(title="x (m)", scaleanchor="y", scaleratio=1,
+                   showgrid=True, gridcolor="#eeeeee"),
+        yaxis=dict(title="y (m)", showgrid=True, gridcolor="#eeeeee"),
+        legend=dict(
+            orientation="v", x=1.02, y=1,
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#cccccc", borderwidth=1,
+            font=dict(size=11, color="#1a1a2e"),  # ← dunkel
+        ),
+        hovermode="closest",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=60, r=180, t=80, b=60),
+        height=600,
+        font=dict(color="#1a1a2e", size=11),  # ← globale Schriftfarbe
+    
+    )
+    
+    fig.update_xaxes(
+        tickfont_color="#333333",
+        title_font_color="#333333",
+        gridcolor="#e8e8e8",
+    )
+    fig.update_yaxes(
+        tickfont_color="#333333",
+        title_font_color="#333333",
+        gridcolor="#e8e8e8",
+    )
+    fig.update_annotations(font_color="#333333")
+    
+    return fig
+
+
+def plot_hit_animated(
+    hit,
+    scenes_dir: str,
+    *,
+    show_polygons: bool = True,
+    show_reference_line: bool = True,
+    fps: int = 10,
+    trail_frames: bool = True,
+    height: int = 620,
+) -> "go.Figure":
+    """
+    Animierter Plotly-Plot — zeigt Akteure Frame-by-Frame bei 10 Hz.
+ 
+    Parameter
+    ---------
+    hit           : eine Zeile aus match_hits (pandas Series oder dict)
+    scenes_dir    : lokaler oder S3-Pfad zum scenes/-Verzeichnis
+    show_polygons : Fahrbahnpolygone anzeigen
+    show_reference_line : Referenzlinie anzeigen
+    fps           : Aufnahme-Framerate (default 10 Hz)
+    trail_frames  : sollen trajektorien trails angezeigt werden
+    height        : Höhe der Figure in Pixeln
+ 
+    Verwendung in Streamlit:
+        fig = plot_hit_animated(hit, scenes_dir="s3://...")
+        st.plotly_chart(fig, use_container_width=True)
+    """
+    import json
+    import numpy as np
+    import plotly.graph_objects as go
+    from shapely.geometry import MultiPolygon, GeometryCollection, Polygon
+ 
+    # ── Daten laden ───────────────────────────────────────────────────────────
+    if hasattr(hit, "to_dict"):
+        hit = hit.to_dict()
+ 
+    t0         = int(hit["t0"])
+    t1         = int(hit["t1"])
+    roles      = json.loads(hit["roles_json"])
+    scene_id   = hit["scene_id"]
+    segment_id = hit["segment_id"]
+    scenario   = hit.get("scenario", "")
+    n_windows  = hit.get("n_windows", "?")
+ 
+    resolved_dir = _scenes_dir_from_hit(hit, scenes_dir)
+    row_data     = _load_scene_row(scene_id, segment_id, resolved_dir)
+    actors       = json.loads(row_data["actors_json"])
+ 
+    role_list = list(roles.items())
+    n_frames  = t1 - t0 + 1
+ 
+    # ── Statische Basis-Traces (Straße + Kontext-Trajektorien) ───────────────
+    base_traces = []
+ 
+    # Fahrbahnpolygone
+    if show_polygons:
+        for json_key, lane_role, (fill, line) in [
+            ("target_polygon_json", "target", ("rgba(33,150,243,0.20)", "#2196F3")),
+            ("left_polygon_json",   "left",   ("rgba(76,175,80,0.18)",  "#4CAF50")),
+            ("right_polygon_json",  "right",  ("rgba(255,152,0,0.18)",  "#FF9800")),
+        ]:
+            geom = _parse_geom(row_data.get(json_key))
+            if geom is None or geom.is_empty:
+                continue
+            polys = (
+                [g for g in geom.geoms if isinstance(g, Polygon)]
+                if isinstance(geom, (MultiPolygon, GeometryCollection))
+                else [geom] if isinstance(geom, Polygon) else []
+            )
+            for i, poly in enumerate(polys):
+                if poly.is_empty:
+                    continue
+                x, y = poly.exterior.xy
+                base_traces.append(go.Scatter(
+                    x=list(x) + [None],
+                    y=list(y) + [None],
+                    fill="toself",
+                    fillcolor=fill,
+                    line=dict(color=line, width=1.2),
+                    mode="lines",
+                    name=f"{lane_role} lane",
+                    legendgroup=lane_role,
+                    showlegend=(i == 0),
+                    hoverinfo="skip",
+                ))
+ 
+    # Referenzlinie
+    if show_reference_line:
+        ref = _parse_geom(row_data.get("reference_line_json"))
+        if ref and not ref.is_empty:
+            x, y = ref.xy
+            base_traces.append(go.Scatter(
+                x=list(x), y=list(y),
+                mode="lines",
+                line=dict(color="#1A237E", width=2.5),
+                name="reference line",
+                legendgroup="refline",
+                showlegend=True,
+                hoverinfo="skip",
+            ))
+ 
+    # Vollständige Kontext-Trajektorie (statisch, fein gestrichelt)
+    _role_colors = {
+        "ego_vehicle": "#2196F3",
+        "npc":         "#F44336",
+        "pedestrian":  "#FF9800",
+        "cyclist":     "#9C27B0",
+    }
+    _default_color = "#607D8B"
+ 
+    all_series = {}
+    for role, actor_id in role_list:
+        ts     = actors["actor_ts"].get(actor_id, {})
+        seg_ts = actors["seg_actor_ts"].get(actor_id, {})
+        color  = _role_colors.get(role, _default_color)
+ 
+        x_full   = ts.get("x")      or []
+        y_full   = ts.get("y")      or []
+        spd_full = ts.get("long_v") or []
+        s_full   = seg_ts.get("s")  or []
+ 
+        x_win   = _safe_series(x_full,   t0, t1)
+        y_win   = _safe_series(y_full,   t0, t1)
+        spd_win = _safe_series(spd_full, t0, t1)
+        s_win   = _safe_series(s_full,   t0, t1)
+ 
+        x_ctx = _safe_series(x_full, 0, max(0, len(x_full) - 1))
+        y_ctx = _safe_series(y_full, 0, max(0, len(y_full) - 1))
+ 
+        all_series[role] = {
+            "actor_id": actor_id,
+            "color":    color,
+            "x":        x_win,
+            "y":        y_win,
+            "spd":      spd_win,
+            "s":        s_win,
+            "x_ctx":    x_ctx,
+            "y_ctx":    y_ctx,
+        }
+ 
+        # Kontext-Trajektorie als statischer Trace
+        base_traces.append(go.Scatter(
+            x=list(x_ctx),
+            y=list(y_ctx),
+            mode="lines",
+            line=dict(color=color, width=1, dash="dot"),
+            opacity=0.18,
+            name=f"{role} (Kontext)",
+            legendgroup=role,
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+ 
+    n_base = len(base_traces)
+ 
+    # ── Animierte Traces: Trails, Marker──────────────────────────────
+    # Diese werden als leere Platzhalter angelegt und in jedem Frame befüllt
+    # alle Trails
+    if trail_frames:
+        for role, actor_id in role_list:
+            color = all_series[role]["color"]
+
+            base_traces.append(go.Scatter(
+                x=[],
+                y=[],
+                mode="lines",
+                line=dict(color=color, width=3),
+                name=f"{role} ({actor_id})",
+                legendgroup=role,
+                legendgrouptitle_text=role,
+                showlegend=True,
+            ))
+
+    # alle Marker
+    for role, actor_id in role_list:
+        color = all_series[role]["color"]
+
+        base_traces.append(go.Scatter(
+            x=[],
+            y=[],
+            mode="markers",
+            marker=dict(
+                size=16,
+                color=color,
+                line=dict(color="white", width=2),
+            ),
+            name=role,
+            legendgroup=role,
+            showlegend=False,
+        ))
+
+
+    # ── Animations-Frames ─────────────────────────────────────────────────────
+    frame_duration_ms = int(1000 / fps)
+    frames = []
+
+    for fi in range(n_frames):
+        t_abs = t0 + fi
+        t_sec = t_abs / fps
+
+        frame_data = []
+
+        # --------------------------------------------------
+        # 1. Trails
+        # --------------------------------------------------
+        if trail_frames:
+            for role, actor_id in role_list:
+                s = all_series[role]
+                color = s["color"]
+
+                trail_start = max(0, fi - n_frames + 1)
+
+                trail_x = [
+                    float(v) if not np.isnan(v) else None
+                    for v in s["x"][trail_start:fi + 1]
+                ]
+
+                trail_y = [
+                    float(v) if not np.isnan(v) else None
+                    for v in s["y"][trail_start:fi + 1]
+                ]
+
+                frame_data.append(go.Scatter(
+                    x=trail_x,
+                    y=trail_y,
+                    mode="lines",
+                    line=dict(color=color, width=3),
+                ))
+
+        # --------------------------------------------------
+        # 2. Marker
+        # --------------------------------------------------
+        for role, actor_id in role_list:
+            s = all_series[role]
+            color = s["color"]
+
+            cx = float(s["x"][fi]) if not np.isnan(s["x"][fi]) else None
+            cy = float(s["y"][fi]) if not np.isnan(s["y"][fi]) else None
+
+            spd_kmh = (
+                float(s["spd"][fi]) * 3.6
+                if not np.isnan(s["spd"][fi])
+                else 0.0
+            )
+
+            sv = (
+                float(s["s"][fi])
+                if not np.isnan(s["s"][fi])
+                else 0.0
+            )
+
+            hover_txt = (
+                f"<b>{role}</b> ({actor_id})<br>"
+                f"t={t_abs} ({t_sec:.1f} s)<br>"
+                f"x={cx:.1f} m  y={cy:.1f} m<br>"
+                f"speed={spd_kmh:.1f} km/h<br>"
+                f"s={sv:.1f} m"
+                if cx is not None
+                else f"<b>{role}</b><br>keine Daten"
+            )
+
+            frame_data.append(go.Scatter(
+                x=[cx] if cx is not None else [],
+                y=[cy] if cy is not None else [],
+                mode="markers",
+                marker=dict(
+                    size=16,
+                    color=color,
+                    line=dict(color="white", width=2),
+                ),
+                hovertext=[hover_txt],
+                hovertemplate="%{hovertext}<extra></extra>",
+            ))
+
+
+        frames.append(go.Frame(
+            data=frame_data,
+            name=str(fi),
+            traces=list(
+                range(
+                    n_base,
+                    n_base + len(role_list) * 3
+                )
+            ),
+        ))
+ 
+    # ── Slider ────────────────────────────────────────────────────────────────
+    sliders = [dict(
+        active=0,
+        steps=[
+            dict(
+                method="animate",
+                args=[[str(fi)], dict(
+                    mode="immediate",
+                    frame=dict(duration=frame_duration_ms, redraw=True),
+                    transition=dict(duration=0),
+                )],
+                label=f"t={t0 + fi}  ({(t0 + fi) / fps:.1f}s)",
+            )
+            for fi in range(n_frames)
+        ],
+        x=0.0, y=-0.04,
+        len=1.0,
+        currentvalue=dict(
+            prefix="Frame: ",
+            font=dict(size=11, color="#333333"),
+            xanchor="center",
+            visible=True,
+        ),
+        transition=dict(duration=0),
+        tickcolor="#333333",
+        font=dict(color="#333333"),
+        pad=dict(t=30),
+    )]
+ 
+    # ── Play / Pause Buttons ──────────────────────────────────────────────────
+    updatemenus = [dict(
+        type="buttons",
+        showactive=False,
+        x=0.0, y=-0.12,
+        xanchor="left",
+        bgcolor="#f0f0f0",
+        bordercolor="#cccccc",
+        font=dict(color="#1a1a2e", size=12),
+        buttons=[
+            dict(
+                label="▶  Play",
+                method="animate",
+                args=[None, dict(
+                    frame=dict(duration=frame_duration_ms, redraw=True),
+                    fromcurrent=True,
+                    transition=dict(duration=0),
+                )],
+            ),
+            dict(
+                label="⏸  Pause",
+                method="animate",
+                args=[[None], dict(
+                    frame=dict(duration=0, redraw=False),
+                    mode="immediate",
+                    transition=dict(duration=0),
+                )],
+            ),
+        ],
+    )]
+ 
+    # ── Figure zusammenbauen ──────────────────────────────────────────────────
+    duration_s = (t1 - t0) / 10.0
+    title_str  = (
+        f"<b>{scenario}</b>  ·  Animation  ·  {scene_id}  ·  {segment_id}<br>"
+        f"<sup>t0={t0} → t1={t1}  ({duration_s:.1f} s, {fps} Hz)  ·  "
+        f"n_windows={n_windows}  ·  "
+        + "  ·  ".join(f"{k}: {v}" for k, v in roles.items())
+        + "</sup>"
+    )
+ 
+    fig = go.Figure(
+        data=base_traces,
+        frames=frames,
+        layout=go.Layout(
+            title=dict(
+                text=title_str,
+                font=dict(size=12, color="#1a1a2e"),
+            ),
+            xaxis=dict(
+                title=dict(text="x (m)", font=dict(color="#333333", size=11)),
+                showgrid=True,
+                gridcolor="#e8e8e8",
+                zeroline=False,
+                scaleanchor="y",
+                scaleratio=1,
+                tickfont=dict(color="#333333", size=10),
+            ),
+            yaxis=dict(
+                title=dict(text="y (m)", font=dict(color="#333333", size=11)),
+                showgrid=True,
+                gridcolor="#e8e8e8",
+                zeroline=False,
+                tickfont=dict(color="#333333", size=10),
+            ),
+            legend=dict(
+                x=1.02, y=1,
+                bgcolor="rgba(255,255,255,0.95)",
+                bordercolor="#cccccc",
+                borderwidth=1,
+                tracegroupgap=8,
+                font=dict(size=11, color="#1a1a2e"),
+            ),
+            hovermode="closest",
+            hoverlabel=dict(
+                bgcolor="#1e1e2e",
+                font_color="white",
+                font_size=12,
+                bordercolor="#444466",
+            ),
+            plot_bgcolor="white",
+            paper_bgcolor="#fafafa",
+            margin=dict(l=60, r=220, t=90, b=130),
+            height=height,
+            font=dict(color="#1a1a2e", size=11),
+            sliders=sliders,
+            updatemenus=updatemenus,
+        ),
+    )
+ 
+    return fig
