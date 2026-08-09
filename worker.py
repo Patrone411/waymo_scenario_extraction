@@ -7,20 +7,11 @@ on every example, and writes one Parquet file per scene to S3 or local disk.
 
 Environment variables
 ---------------------
-LOCAL_MODE      "1" to bypass GCS/S3 and use local filesystem (default: "0")
+LOCAL_MODE      "1" to bypass Azure and use local filesystem (default: "0")
 LOCAL_INPUT     local directory containing TFRecord files   (default: "data")
 LOCAL_OUTPUT    local directory for Parquet output          (default: "test_output")
-
-GCS_BUCKET      GCS bucket name                (required when LOCAL_MODE=0)
-GCS_PREFIX      prefix inside the bucket       (optional, default: "")
-SHARD_INDEX     which shard this pod processes (required)
-TOTAL_SHARDS    total number of shards         (default: 1000)
-
-S3_BUCKET       S3 bucket for output           (required when LOCAL_MODE=0)
-S3_PREFIX       S3 prefix for output           (default: "output")
-S3_ENDPOINT_URL custom S3 endpoint URL         (optional)
-AWS_CA_BUNDLE   path to CA bundle for TLS      (optional)
 """
+
 
 from __future__ import annotations
 
@@ -36,11 +27,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from shapely.geometry import mapping
 import tensorflow as tf
-import boto3
 
 from feature_extraction.pipeline import process_scenario
 from feature_extraction.tools.scenario import Scenario, features_description
 
+from worker_utils import (
+    make_serializable,
+    encode_inter_actor_pair,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
@@ -50,16 +44,17 @@ LOCAL_MODE   = os.environ.get("LOCAL_MODE",   "0") == "1"
 LOCAL_INPUT  = os.environ.get("LOCAL_INPUT",  "data")
 LOCAL_OUTPUT = os.environ.get("LOCAL_OUTPUT", "test_output")
 
-GCS_BUCKET   = os.environ.get("GCS_BUCKET",  "")
-GCS_PREFIX   = os.environ.get("GCS_PREFIX",  "")
 SHARD_INDEX  = int(os.environ.get("SHARD_INDEX",  "0"))
 TOTAL_SHARDS = int(os.environ.get("TOTAL_SHARDS", "1000"))
 
-S3_BUCKET       = os.environ.get("S3_BUCKET",       "")
-S3_PREFIX       = os.environ.get("S3_PREFIX",       "output")
-S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", None)
-AWS_CA_BUNDLE   = os.environ.get("AWS_CA_BUNDLE",   None)
 
+
+# Azure Config
+AZURE_STORAGE_ACCOUNT  = os.environ.get("AZURE_STORAGE_ACCOUNT",  "")
+AZURE_STORAGE_KEY      = os.environ.get("AZURE_STORAGE_KEY",      "")
+AZURE_INPUT_CONTAINER  = os.environ.get("AZURE_INPUT_CONTAINER",  "tfrecords")
+AZURE_OUTPUT_CONTAINER = os.environ.get("AZURE_OUTPUT_CONTAINER", "parquets")
+AZURE_PREFIX           = os.environ.get("AZURE_PREFIX",           "parquet/run-001")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parquet schema  (flat, stable across all scenes)
@@ -83,130 +78,6 @@ SCENE_SCHEMA = pa.schema([
     pa.field("actors_json",           pa.string()),
 ])
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Serialisation helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def make_serializable(obj):
-    """
-    Recursively convert numpy / shapely / set types to plain Python so that
-    json.dumps() and allow_nan=False both work cleanly.
-    """
-    # plain Python float: NaN / Inf → None
-    if isinstance(obj, float) and (obj != obj or obj == float("inf") or obj == float("-inf")):
-        return None
-    # numpy floating scalar
-    if isinstance(obj, np.floating):
-        if obj != obj or obj == np.inf or obj == -np.inf:
-            return None
-        return float(obj)
-    # numpy integer scalar
-    if isinstance(obj, np.integer):
-        return int(obj)
-    # numpy array — recurse element-by-element so NaN/Inf pass through above
-    if isinstance(obj, np.ndarray):
-        if obj.ndim == 0:
-            return make_serializable(obj.item())
-        return [make_serializable(x) for x in obj]
-    # Python set
-    if isinstance(obj, set):
-        return list(obj)
-    # Shapely geometry (Point, Polygon, LineString, …)
-    if hasattr(obj, "__geo_interface__"):
-        return mapping(obj)
-    # dict — also convert non-string keys
-    if isinstance(obj, dict):
-        return {
-            int(k)   if isinstance(k, np.integer)
-            else float(k) if isinstance(k, np.floating)
-            else str(k)   if not isinstance(k, (str, int, float, bool, type(None)))
-            else k
-            : make_serializable(v)
-            for k, v in obj.items()
-        }
-    if isinstance(obj, (list, tuple)):
-        return [make_serializable(i) for i in obj]
-    return obj
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Sparse inter-actor encoding
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _encode_sparse_series(values: list) -> dict:
-    """
-    Convert a length-91 list (with None gaps) into a compact sparse form.
-
-    Returns:
-        {
-            "intervals": [[t_start, t_end], ...],   # inclusive ranges
-            "data":      [v0, v1, ...]               # values concatenated
-        }
-
-    A completely empty list (all None) returns {"intervals": [], "data": []}.
-    """
-    intervals: list = []
-    data:      list = []
-    i = 0
-    n = len(values)
-    while i < n:
-        if values[i] is None:
-            i += 1
-            continue
-        j = i
-        while j < n and values[j] is not None:
-            j += 1
-        intervals.append([i, j - 1])
-        data.extend(values[i:j])
-        i = j
-    return {"intervals": intervals, "data": data}
-
-
-def _encode_sparse_string_series(values: list) -> dict:
-    """
-    Same as _encode_sparse_series but for string series (e.g. position labels).
-    Treats None, "", and "unknown" as invalid / absent.
-    """
-    INVALID = {None, "unknown", ""}
-    intervals: list = []
-    data:      list = []
-    i = 0
-    n = len(values)
-    while i < n:
-        if values[i] in INVALID:
-            i += 1
-            continue
-        j = i
-        while j < n and values[j] not in INVALID:
-            j += 1
-        intervals.append([i, j - 1])
-        data.extend(values[i:j])
-        i = j
-    return {"intervals": intervals, "data": data}
-
-
-def encode_inter_actor_pair(pair_data: dict) -> Optional[dict]:
-    """
-    Encode one actor-pair dict into compact sparse form.
-    Returns None if the pair carries no valid data at all (→ drop entirely).
-
-    Input shape:
-        {
-            "position":      [...91 str/None...],
-            "ttc":           [...91 float/None...],
-            "eucl_distance": [...91 float/None...]
-        }
-    """
-    ttc      = _encode_sparse_series(pair_data.get("ttc")           or [])
-    dist     = _encode_sparse_series(pair_data.get("eucl_distance") or [])
-    position = _encode_sparse_string_series(pair_data.get("position") or [])
-
-    if not ttc["data"] and not dist["data"] and not position["data"]:
-        return None
-
-    return {"ttc": ttc, "eucl_distance": dist, "position": position}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -329,20 +200,61 @@ def scene_to_parquet_rows(result: dict) -> list:
 # TFRecord I/O
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gcs_path() -> str:
-    """Return the path to this shard's TFRecord file (local or GCS URI)."""
-    name = (
+def _tfrecord_name() -> str:
+    return (
         f"training_tfexample.tfrecord"
         f"-{SHARD_INDEX:05d}"
         f"-of-{TOTAL_SHARDS:05d}"
     )
+
+
+def get_input_path() -> str:
+    name = _tfrecord_name()
+
     if LOCAL_MODE:
         return os.path.join(LOCAL_INPUT, name)
-    return (
-        f"gs://{GCS_BUCKET}/{GCS_PREFIX}/{name}"
-        if GCS_PREFIX
-        else f"gs://{GCS_BUCKET}/{name}"
+
+    if not AZURE_STORAGE_ACCOUNT:
+        raise ValueError(
+            "AZURE_STORAGE_ACCOUNT muss gesetzt sein wenn LOCAL_MODE=0"
+        )
+
+    if not AZURE_STORAGE_KEY:
+        raise ValueError(
+            "AZURE_STORAGE_KEY muss gesetzt sein wenn LOCAL_MODE=0"
+        )
+
+    from azure.storage.blob import BlobServiceClient
+
+    local_tmp = f"/tmp/shard_{SHARD_INDEX:05d}.tfrecord"
+
+    print(
+        f"[shard {SHARD_INDEX}] lade Azure Blob "
+        f"{AZURE_INPUT_CONTAINER}/{name}",
+        flush=True,
     )
+
+    blob_service = BlobServiceClient(
+        account_url=(
+            f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net"
+        ),
+        credential=AZURE_STORAGE_KEY,
+    )
+
+    blob_client = blob_service.get_blob_client(
+        container=AZURE_INPUT_CONTAINER,
+        blob=name,
+    )
+
+    with open(local_tmp, "wb") as f:
+        blob_client.download_blob().readinto(f)
+
+    print(
+        f"[shard {SHARD_INDEX}] download fertig → {local_tmp}",
+        flush=True,
+    )
+
+    return local_tmp
 
 
 def parse_example(serialized) -> dict:
@@ -355,34 +267,6 @@ def stream_tfrecord(path: str):
     for raw in tf.data.TFRecordDataset(path):
         yield parse_example(raw)
 
-S3_INPUT_BUCKET = os.environ.get("S3_INPUT_BUCKET", "")
-S3_INPUT_KEY    = os.environ.get("S3_INPUT_KEY", "")
-
-def get_input_path() -> str:
-    if LOCAL_MODE:
-        name = (
-            f"training_tfexample.tfrecord"
-            f"-{SHARD_INDEX:05d}"
-            f"-of-{TOTAL_SHARDS:05d}"
-        )
-        return os.path.join(LOCAL_INPUT, name)
-
-    if S3_INPUT_KEY:
-        local_tmp = f"/tmp/shard_{SHARD_INDEX:05d}.tfrecord"
-        print(f"[shard {SHARD_INDEX}] lade s3://{S3_INPUT_BUCKET}/{S3_INPUT_KEY}", flush=True)
-        boto3.client("s3").download_file(S3_INPUT_BUCKET, S3_INPUT_KEY, local_tmp)
-        return local_tmp
-
-    # GCS Fallback
-    name = (
-        f"training_tfexample.tfrecord"
-        f"-{SHARD_INDEX:05d}"
-        f"-of-{TOTAL_SHARDS:05d}"
-    )
-    return (
-        f"gs://{GCS_BUCKET}/{GCS_PREFIX}/{name}"
-        if GCS_PREFIX else f"gs://{GCS_BUCKET}/{name}"
-    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Output: local or S3
@@ -399,39 +283,88 @@ def _s3_client():
 
 
 def write_scene(scene_id: str, table: pa.Table, n_rows: int) -> None:
-    """Write one scene Parquet file to local disk or S3."""
     if LOCAL_MODE:
-        out_dir = Path(LOCAL_OUTPUT) / f"{SHARD_INDEX:05d}" / "scenes"
+        out_dir = (
+            Path(LOCAL_OUTPUT)
+            / f"{SHARD_INDEX:05d}"
+            / "scenes"
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
+
         out_path = out_dir / f"{scene_id}.parquet"
+
         pq.write_table(
             table,
             out_path,
             compression="snappy",
             row_group_size=n_rows,
         )
-        print(f"[local] shard={SHARD_INDEX} scene={scene_id} → {out_path}", flush=True)
-    else:
-        buf = io.BytesIO()
-        pq.write_table(
-            table,
-            buf,
-            compression="snappy",
-            row_group_size=n_rows,
-        )
-        buf.seek(0)
-        key = f"{S3_PREFIX}/{SHARD_INDEX:05d}/scenes/{scene_id}.parquet"
-        _s3_client().upload_fileobj(buf, S3_BUCKET, key)
-        print(f"[s3] shard={SHARD_INDEX} scene={scene_id} → s3://{S3_BUCKET}/{key}", flush=True)
 
+        print(
+            f"[local] {scene_id} → {out_path}",
+            flush=True,
+        )
+        return
+
+    if not AZURE_STORAGE_ACCOUNT:
+        raise ValueError(
+            "AZURE_STORAGE_ACCOUNT muss gesetzt sein wenn LOCAL_MODE=0"
+        )
+
+    if not AZURE_STORAGE_KEY:
+        raise ValueError(
+            "AZURE_STORAGE_KEY muss gesetzt sein wenn LOCAL_MODE=0"
+        )
+
+    from azure.storage.blob import BlobServiceClient
+
+    buf = io.BytesIO()
+
+    pq.write_table(
+        table,
+        buf,
+        compression="snappy",
+        row_group_size=n_rows,
+    )
+
+    buf.seek(0)
+
+    blob_name = (
+        f"{AZURE_PREFIX}/"
+        f"{SHARD_INDEX:05d}/"
+        f"scenes/"
+        f"{scene_id}.parquet"
+    )
+
+    blob_service = BlobServiceClient(
+        account_url=(
+            f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net"
+        ),
+        credential=AZURE_STORAGE_KEY,
+    )
+
+    blob_service.get_blob_client(
+        container=AZURE_OUTPUT_CONTAINER,
+        blob=blob_name,
+    ).upload_blob(
+        buf,
+        overwrite=True,
+    )
+
+    print(
+        f"[azure] shard={SHARD_INDEX} "
+        f"scene={scene_id} → "
+        f"{AZURE_OUTPUT_CONTAINER}/{blob_name}",
+        flush=True,
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main processing loop
 # ─────────────────────────────────────────────────────────────────────────────
 
 def process_shard() -> None:
-    path = get_input_path()
-    print(f"[shard {SHARD_INDEX}] lese {path}", flush=True)
+    path = get_input_path()   # ← statt gcs_path()
+    print(f"[shard {SHARD_INDEX}] verarbeite {path}", flush=True)
 
     n_scenes  = 0
     n_skipped = 0
@@ -485,14 +418,18 @@ def process_shard() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Sanity-checks
     if not LOCAL_MODE:
-        if not S3_BUCKET:
-            raise ValueError("S3_BUCKET muss gesetzt sein wenn LOCAL_MODE=0")
+        if not AZURE_STORAGE_ACCOUNT:
+            raise ValueError(
+                "AZURE_STORAGE_ACCOUNT muss gesetzt sein "
+                "wenn LOCAL_MODE=0"
+            )
 
-        # nur prüfen wenn wirklich GCS benutzt wird
-        if not S3_INPUT_KEY and not GCS_BUCKET:
-            raise ValueError("Entweder S3_INPUT_KEY oder GCS_BUCKET muss gesetzt sein")
+        if not AZURE_STORAGE_KEY:
+            raise ValueError(
+                "AZURE_STORAGE_KEY muss gesetzt sein "
+                "wenn LOCAL_MODE=0"
+            )
 
     print(
         f"[startup] LOCAL_MODE={LOCAL_MODE} "

@@ -5,3 +5,4 @@ shapely==2.0.1
 numpy==1.24.3
 pandas==2.0.3
 scipy==1.9.1
+azure-storage-blob>=12.19.0
