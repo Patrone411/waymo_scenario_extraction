@@ -204,7 +204,7 @@ def _tfrecord_name() -> str:
     return (
         f"training_tfexample.tfrecord"
         f"-{SHARD_INDEX:05d}"
-        f"-of-{TOTAL_SHARDS:05d}"
+        f"-of-{1000:05d}"
     )
 
 
@@ -228,12 +228,15 @@ def get_input_path() -> str:
 
     local_tmp = f"/tmp/shard_{SHARD_INDEX:05d}.tfrecord"
 
+    """https://waymostorage.blob.core.windows.net/tfrecords/training_tfexample.tfrecord-00000-of-01000"""
     print(
         f"[shard {SHARD_INDEX}] lade Azure Blob "
         f"{AZURE_INPUT_CONTAINER}/{name}",
         flush=True,
     )
 
+    print(AZURE_STORAGE_ACCOUNT)
+    
     blob_service = BlobServiceClient(
         account_url=(
             f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net"
@@ -369,6 +372,7 @@ def process_shard() -> None:
     n_scenes  = 0
     n_skipped = 0
     n_errors  = 0
+    skipped_list = []
 
     for example in stream_tfrecord(path):
         try:
@@ -377,6 +381,9 @@ def process_shard() -> None:
             result = process_scenario(scenario)
 
             if result is None:
+                parsed = scenario.example
+                scene_id = parsed['scenario/id'].item().decode("utf-8")
+                skipped_list.append(scene_id)
                 n_skipped += 1
                 continue
 
@@ -405,6 +412,8 @@ def process_shard() -> None:
             print(f"[shard {SHARD_INDEX}] ERROR bei example:", flush=True)
             traceback.print_exc()
             continue
+        print("skipped scenes: ", skipped_list)
+
 
     print(
         f"[shard {SHARD_INDEX}] fertig — "
