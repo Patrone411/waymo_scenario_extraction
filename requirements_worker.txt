@@ -5,5 +5,5 @@ shapely==2.0.1
 numpy==1.24.3
 pandas==2.0.3
 scipy==1.9.1
-azure-storage-blob>=12.19.0
-azure-identity==1.13.1
+azure-storage-blob==12.19.1
+azure-identity==1.13.0
