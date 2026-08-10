@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements_worker.txt
 # Lokale Module
 COPY feature_extraction/ ./feature_extraction/
 COPY external/ ./external/
+COPY tests/ ./tests/
 
 # Worker
 COPY worker.py .
