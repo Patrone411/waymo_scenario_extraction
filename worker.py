@@ -36,6 +36,9 @@ from worker_utils import (
     encode_inter_actor_pair,
 )
 
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +58,30 @@ AZURE_STORAGE_KEY      = os.environ.get("AZURE_STORAGE_KEY",      "")
 AZURE_INPUT_CONTAINER  = os.environ.get("AZURE_INPUT_CONTAINER",  "tfrecords")
 AZURE_OUTPUT_CONTAINER = os.environ.get("AZURE_OUTPUT_CONTAINER", "parquets")
 AZURE_PREFIX           = os.environ.get("AZURE_PREFIX",           "parquet/run-001")
+
+def get_blob_credential():
+    """
+    Authentication:
+    1. AZURE_STORAGE_KEY gesetzt -> Storage Account Key
+       (z.B. bestehende CI-Pipeline)
+    2. Kein Storage Key -> Azure Workload Identity
+       (z.B. AKS)
+    """
+    if AZURE_STORAGE_KEY:
+        print(
+            "[azure] authentication: Storage Account Key",
+            flush=True,
+        )
+        return AZURE_STORAGE_KEY
+
+    print(
+        "[azure] authentication: Azure Workload Identity",
+        flush=True,
+    )
+
+    return DefaultAzureCredential(
+        exclude_interactive_browser_credential=True,
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parquet schema  (flat, stable across all scenes)
@@ -219,12 +246,6 @@ def get_input_path() -> str:
             "AZURE_STORAGE_ACCOUNT muss gesetzt sein wenn LOCAL_MODE=0"
         )
 
-    if not AZURE_STORAGE_KEY:
-        raise ValueError(
-            "AZURE_STORAGE_KEY muss gesetzt sein wenn LOCAL_MODE=0"
-        )
-
-    from azure.storage.blob import BlobServiceClient
 
     local_tmp = f"/tmp/shard_{SHARD_INDEX:05d}.tfrecord"
 
@@ -241,7 +262,7 @@ def get_input_path() -> str:
         account_url=(
             f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net"
         ),
-        credential=AZURE_STORAGE_KEY,
+        credential=get_blob_credential(),
     )
 
     blob_client = blob_service.get_blob_client(
@@ -272,18 +293,8 @@ def stream_tfrecord(path: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Output: local or S3
+# Output: local or Azure Blob Storage
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _s3_client():
-    import boto3
-    kwargs: dict = {}
-    if S3_ENDPOINT_URL:
-        kwargs["endpoint_url"] = S3_ENDPOINT_URL
-    if AWS_CA_BUNDLE:
-        kwargs["verify"] = AWS_CA_BUNDLE
-    return boto3.client("s3", **kwargs)
-
 
 def write_scene(scene_id: str, table: pa.Table, n_rows: int) -> None:
     if LOCAL_MODE:
@@ -314,12 +325,6 @@ def write_scene(scene_id: str, table: pa.Table, n_rows: int) -> None:
             "AZURE_STORAGE_ACCOUNT muss gesetzt sein wenn LOCAL_MODE=0"
         )
 
-    if not AZURE_STORAGE_KEY:
-        raise ValueError(
-            "AZURE_STORAGE_KEY muss gesetzt sein wenn LOCAL_MODE=0"
-        )
-
-    from azure.storage.blob import BlobServiceClient
 
     buf = io.BytesIO()
 
@@ -343,7 +348,7 @@ def write_scene(scene_id: str, table: pa.Table, n_rows: int) -> None:
         account_url=(
             f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net"
         ),
-        credential=AZURE_STORAGE_KEY,
+        credential=get_blob_credential(),
     )
 
     blob_service.get_blob_client(
@@ -431,12 +436,6 @@ if __name__ == "__main__":
         if not AZURE_STORAGE_ACCOUNT:
             raise ValueError(
                 "AZURE_STORAGE_ACCOUNT muss gesetzt sein "
-                "wenn LOCAL_MODE=0"
-            )
-
-        if not AZURE_STORAGE_KEY:
-            raise ValueError(
-                "AZURE_STORAGE_KEY muss gesetzt sein "
                 "wenn LOCAL_MODE=0"
             )
 
