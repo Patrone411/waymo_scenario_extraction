@@ -2,6 +2,20 @@ trigger:
   branches:
     include:
       - main
+    paths:
+    include:
+      - scenario_extraction/parquet_source.py
+      - app.py
+      - app_stats.py
+      - app_plots.py
+      - scenario_plot.py
+      - requirements_app.txt
+    exclude:
+      - README.md
+      - docs/**
+      - '*.md'
+      - .azure/pipelines/worker-ci.yml
+      - worker.py
 
 pool:
   vmImage: ubuntu-latest
