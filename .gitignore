@@ -1,5 +1,4 @@
 data/
-test_output/
 test_matcher_out/
 out_local/
 /tmp/
@@ -12,4 +11,3 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
