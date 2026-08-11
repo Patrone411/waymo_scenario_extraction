@@ -1,4 +1,3 @@
-# docker/matcher.Dockerfile
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -13,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements_matcher.txt
 COPY feature_extraction/ ./feature_extraction/
 COPY external/ ./external/
 COPY scenario_extraction/ ./scenario_extraction/
+COPY test_output/ ./test_output/
 
 WORKDIR /app/scenario_extraction
 CMD ["python", "run_matching.py"]
