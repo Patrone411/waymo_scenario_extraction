@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 from typing import Iterator, List, Optional
 
-import boto3
 import pandas as pd
 import pyarrow.parquet as pq
+from azure.storage.blob import BlobServiceClient
 
 from scenario_matching.feature_providers.features import TagFeatures, SkipSegment
 
@@ -206,6 +206,82 @@ class ParquetSource:
             yield from _iter_scene(df, source_uri=f"s3://{self.bucket}/{key}",
                                    min_lanes=self.min_lanes)
 
+class AzureParquetSource:
+    """
+    Reads scene Parquet files from Azure Blob Storage and reconstructs
+    the same SceneResult objects as ParquetSource.
+    """
+
+    def __init__(
+        self,
+        account_name: str,
+        account_key: Optional[str],
+        container: str,
+        base_prefix: str,
+        min_lanes: Optional[int] = None,
+    ):
+        self.account_name = account_name
+        self.account_key = account_key
+        self.container = container
+        self.base_prefix = base_prefix.rstrip("/")
+        self.min_lanes = min_lanes
+
+    def _blob_service(self):
+        return BlobServiceClient(
+            account_url=f"https://{self.account_name}.blob.core.windows.net",
+            credential=self.account_key,
+        )
+
+    def _list_scene_blobs(self, container_client) -> List[str]:
+        prefix = f"{self.base_prefix}/scenes/"
+
+        print(
+            f"[AzureParquetSource] listing "
+            f"az://{self.container}/{prefix}",
+            flush=True,
+        )
+
+        blobs = [
+            blob.name
+            for blob in container_client.list_blobs(name_starts_with=prefix)
+            if blob.name.endswith(".parquet")
+        ]
+
+        print(
+            f"[AzureParquetSource] gefunden: {len(blobs)} Parquet-Dateien",
+            flush=True,
+        )
+
+        return sorted(blobs)
+
+    def __iter__(self) -> Iterator[SceneResult]:
+        service = self._blob_service()
+        container_client = service.get_container_client(self.container)
+
+        keys = self._list_scene_blobs(container_client)
+
+        for key in keys:
+            try:
+                blob_client = container_client.get_blob_client(key)
+
+                data = blob_client.download_blob().readall()
+                buf = io.BytesIO(data)
+
+                df = pq.read_table(buf).to_pandas()
+
+            except Exception as e:
+                print(
+                    f"[WARN] could not read "
+                    f"az://{self.container}/{key}: {e}",
+                    flush=True,
+                )
+                continue
+
+            yield from _iter_scene(
+                df,
+                source_uri=f"az://{self.container}/{key}",
+                min_lanes=self.min_lanes,
+            )
 
 class LocalParquetSource:
     """Same interface as ParquetSource but reads from a local directory."""
@@ -226,39 +302,59 @@ class LocalParquetSource:
 
 
 def _iter_scene(
-    df: pd.DataFrame,
-    source_uri: str,
-    min_lanes: Optional[int],
-) -> Iterator[SceneResult]:
-    """
-    Shared logic: reconstruct tag_json dict → TagFeatures per segment,
-    then yield one SceneResult.
-    """
-    tag_json = _row_to_tag_json(df)
+        df: pd.DataFrame,
+        source_uri: str,
+        min_lanes: Optional[int],
+    ) -> Iterator[SceneResult]:
 
-    feats_by_seg: dict = {}
-    meta_by_id:   dict = {}
+        tag_json = _row_to_tag_json(df)
 
-    for seg_id, seg_meta in (tag_json.get("road_segments") or {}).items():
-        num_lanes = int(seg_meta.get("num_lanes") or 0)
-        if min_lanes is not None and num_lanes != min_lanes:
-            continue
-        try:
-            feats = TagFeatures.from_tag_json(tag_json, seg_id)
-        except SkipSegment:
-            continue
-        except Exception as e:
-            print(f"[WARN] TagFeatures.from_tag_json failed for {seg_id}: {e}", flush=True)
-            continue
+        print("DEBUG tag_json keys:", tag_json.keys(), flush=True)
+        print("DEBUG road_segments:", tag_json.get("road_segments"), flush=True)
 
-        meta = SegmentMeta(
-            source_uri=source_uri,
-            seg_id=seg_id,
-            num_lanes=num_lanes,
-            length_m=feats.length_m,
-        )
-        feats_by_seg[seg_id] = feats
-        meta_by_id[seg_id]   = meta
+        feats_by_seg: dict = {}
+        meta_by_id: dict = {}
 
-    if feats_by_seg:
-        yield SceneResult(feats_by_seg=feats_by_seg, seg_meta_by_id=meta_by_id)
+        for seg_id, seg_meta in (tag_json.get("road_segments") or {}).items():
+
+            print(f"DEBUG processing seg_id={seg_id}", flush=True)
+
+            num_lanes = int(seg_meta.get("num_lanes") or 0)
+
+            if min_lanes is not None and num_lanes != min_lanes:
+                continue
+
+            try:
+                feats = TagFeatures.from_tag_json(tag_json, seg_id)
+                print(f"DEBUG TagFeatures succeeded for {seg_id}", flush=True)
+
+            except SkipSegment as e:
+                print(f"DEBUG SkipSegment for {seg_id}: {e}", flush=True)
+                continue
+
+            except Exception as e:
+                import traceback
+                print(
+                    f"[WARN] TagFeatures.from_tag_json failed for {seg_id}: {e}",
+                    flush=True,
+                )
+                traceback.print_exc()
+                continue
+
+            meta = SegmentMeta(
+                source_uri=source_uri,
+                seg_id=seg_id,
+                num_lanes=num_lanes,
+                length_m=feats.length_m,
+            )
+
+            feats_by_seg[seg_id] = feats
+            meta_by_id[seg_id] = meta
+
+        print("DEBUG feats_by_seg:", feats_by_seg.keys(), flush=True)
+
+        if feats_by_seg:
+            yield SceneResult(
+                feats_by_seg=feats_by_seg,
+                seg_meta_by_id=meta_by_id,
+            )

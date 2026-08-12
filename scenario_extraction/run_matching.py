@@ -524,7 +524,9 @@ def run_one_prefix(
     processed  = 0
     total_hits = 0
 
+    print(src)
     for res in src:
+        print(res)
         if n_scenes_limit is not None and processed >= n_scenes_limit:
             break
 
