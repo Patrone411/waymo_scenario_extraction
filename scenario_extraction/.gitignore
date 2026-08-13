@@ -5,6 +5,7 @@ __pycache__/
 .vscode/
 *.json
 *.jsonl
+!osc2_parser/srunner/osc2/semantics/osc_semantics_registry.json
 
 .pyc
 protoc-32.1-win64.zip

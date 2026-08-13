@@ -1,0 +1,1105 @@
+{
+  "meta": {
+    "version": "0.1",
+    "notes": [
+      "This registry captures the actors, actions, and modifiers.",
+      "Actions include overloads where applicable (e.g., vehicle.change_lane).",
+      "Defaults use literal values or special tokens like '<actor>' for the invoking actor.",
+      "Types are opaque strings (e.g., 'length', 'speed'); your type system should interpret them.",
+      "Rules include 'mutually_exclusive', 'requires', 'exactly_one_of', and 'at_least_one_of'.",
+      "Abstract actions (action families) are marked 'abstract': true and cannot be invoked directly."
+    ]
+  },
+  "enums": {
+    "movement_mode": [
+      "monotonous",
+      "other"
+    ],
+    "track": [
+      "actual",
+      "projected"
+    ],
+    "dynamic_profile": null,
+    "lat_measure_by": null,
+    "yaw_measure_by": null,
+    "orientation_measured_by": null,
+    "movement_options": null
+  },
+  "actor_types": {
+    "osc_actor": {
+      "inherits": null,
+      "fields": {
+        "bounding_box": {
+          "type": "bounding_box",
+          "mandatory": true
+        },
+        "color": {
+          "type": "color",
+          "mandatory": false
+        },
+        "geometry_reference": {
+          "type": "string",
+          "mandatory": false
+        },
+        "center_of_gravity": {
+          "type": "position_3d",
+          "mandatory": true
+        },
+        "pose": {
+          "type": "pose_3d",
+          "mandatory": true,
+          "var": true
+        }
+      }
+    },
+    "physical_object": {
+      "inherits": "osc_actor",
+      "fields": {}
+    },
+    "movable_object": {
+      "inherits": "physical_object",
+      "fields": {
+        "velocity": {
+          "type": "velocity_6d",
+          "mandatory": true,
+          "var": true
+        },
+        "acceleration": {
+          "type": "acceleration_6d",
+          "mandatory": true,
+          "var": true
+        },
+        "speed": {
+          "type": "speed",
+          "mandatory": true,
+          "var": true
+        }
+      }
+    },
+    "traffic_participant": {
+      "inherits": "movable_object",
+      "fields": {
+        "intended_infrastructure": {
+          "type": "list<intended_infrastructure>",
+          "mandatory": true
+        }
+      }
+    },
+    "vehicle": {
+      "inherits": "traffic_participant",
+      "fields": {
+        "vehicle_category": {
+          "type": "vehicle_category",
+          "mandatory": true
+        },
+        "rear_overhang": {
+          "type": "length",
+          "mandatory": true
+        }
+      }
+    },
+    "person": {
+      "inherits": "traffic_participant",
+      "fields": {}
+    }
+  },
+  "actions": {
+    "osc_actor.osc_action": {
+      "abstract": true,
+      "invoker_type": "osc_actor",
+      "overloads": [
+        {
+          "params": {
+            "duration": { "type": "time", "optional": true }
+          }
+        }
+      ]
+    },
+    "movable_object.action_for_movable_object": {
+      "abstract": true,
+      "invoker_type": "movable_object",
+      "inherits": "osc_actor.osc_action",
+      "overloads": []
+    },
+    "vehicle.action_for_vehicle": {
+      "abstract": true,
+      "invoker_type": "vehicle",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": []
+    },
+    "person.action_for_person": {
+      "abstract": true,
+      "invoker_type": "person",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": []
+    },
+    "movable_object.move": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "movable_object.remain_stationary": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "movable_object.assign_position": {
+    "invoker_type": "movable_object",
+    "inherits": "movable_object.action_for_movable_object",
+    "overloads": [
+      {
+        "params": {
+          "position": { "type": "position_3d", "optional": false },
+          "duration": { "type": "time", "optional": true }
+        }
+      },
+      {
+        "params": {
+          "route_point": { "type": "route_point", "optional": false },
+          "duration": { "type": "time", "optional": true }
+        }
+      },
+      {
+        "params": {
+          "odr_point": { "type": "odr_point", "optional": false },
+          "duration":  { "type": "time", "optional": true }
+        }
+      },
+      {
+        "params": {
+          "odrPoint": { "type": "odr_point", "optional": false },
+          "duration": { "type": "time", "optional": true }
+        }
+      },
+      {
+        "params": {
+          "odr": { "type": "odr_point", "optional": false },
+          "duration": { "type": "time", "optional": true }
+        }
+      }
+    ]
+  },
+    "movable_object.assign_orientation": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        { "params": {
+            "target":   { "type": "orientation_3d", "optional": false },
+            "duration": { "type": "time",           "optional": true  }
+        } }
+      ]
+    },
+    "movable_object.assign_speed": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        { "params": {
+            "target":   { "type": "speed", "optional": false },
+            "duration": { "type": "time",  "optional": true  }
+        } }
+      ]
+    },
+    "movable_object.assign_acceleration": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        { "params": {
+            "target":   { "type": "acceleration", "optional": false },
+            "duration": { "type": "time",         "optional": true  }
+        } }
+      ]
+    },
+    "movable_object.change_position": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {
+            "target": {
+              "type": "position_3d",
+              "optional": false
+            },
+            "interpolation": {
+              "type": "path_interpolation",
+              "optional": false
+            },
+            "on_road_network": {
+              "type": "bool",
+              "optional": false
+            }
+          }
+        }
+      ]
+    },
+    "movable_object.change_speed": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {
+            "target": {
+              "type": "speed",
+              "optional": false
+            },
+            "rate_profile": {
+              "type": "dynamic_profile",
+              "optional": true
+            },
+            "rate_peak": {
+              "type": "acceleration",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "movable_object.keep_speed": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "movable_object.change_acceleration": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {
+            "target": {
+              "type": "acceleration",
+              "optional": false
+            },
+            "rate_profile": {
+              "type": "dynamic_profile",
+              "optional": true
+            },
+            "rate_peak": {
+              "type": "jerk",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "movable_object.keep_acceleration": {
+      "invoker_type": "movable_object",
+      "inherits": "movable_object.action_for_movable_object",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "vehicle.drive": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "vehicle.follow_lane": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {
+            "offset": {
+              "type": "length",
+              "optional": true
+            },
+            "rate_profile": {
+              "type": "dynamic_profile",
+              "optional": true
+            },
+            "rate_peak": {
+              "type": "speed",
+              "optional": true
+            },
+            "target": {
+              "type": "lane",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "vehicle.change_lane": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "name": "relative",
+          "params": {
+            "num_of_lanes": {
+              "type": "int",
+              "optional": true,
+              "default": 1
+            },
+            "side": {
+              "type": "lane_change_side",
+              "optional": false
+            },
+            "reference": {
+              "type": "physical_object",
+              "optional": true,
+              "default": "<actor>"
+            },
+            "offset": {
+              "type": "length",
+              "optional": true
+            },
+            "rate_profile": {
+              "type": "dynamic_profile",
+              "optional": true
+            },
+            "rate_peak": {
+              "type": "speed",
+              "optional": true
+            }
+          },
+          "rules": {
+            "requires": [
+              [
+                "side",
+                "num_of_lanes"
+              ]
+            ]
+          }
+        },
+        {
+          "name": "absolute",
+          "params": {
+            "target": {
+              "type": "lane",
+              "optional": false
+            },
+            "offset": {
+              "type": "length",
+              "optional": true
+            },
+            "rate_profile": {
+              "type": "dynamic_profile",
+              "optional": true
+            },
+            "rate_peak": {
+              "type": "speed",
+              "optional": true
+            }
+          }
+        }
+      ],
+      "rules": {
+        "overloads_mutually_exclusive": true
+      }
+    },
+    "vehicle.change_space_gap": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {
+            "target": {
+              "type": "length",
+              "optional": false
+            },
+            "direction": {
+              "type": "gap_direction",
+              "optional": false
+            },
+            "reference": {
+              "type": "physical_object",
+              "optional": false
+            }
+          }
+        }
+      ]
+    },
+    "vehicle.keep_space_gap": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {
+            "reference": {
+              "type": "physical_object",
+              "optional": false
+            },
+            "direction": {
+              "type": "distance_direction",
+              "optional": false
+            }
+          }
+        }
+      ]
+    },
+    "vehicle.change_time_headway": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {
+            "target": {
+              "type": "time",
+              "optional": false
+            },
+            "direction": {
+              "type": "headway_direction",
+              "optional": false
+            },
+            "reference": {
+              "type": "physical_object",
+              "optional": false
+            }
+          }
+        }
+      ]
+    },
+    "vehicle.keep_time_headway": {
+      "invoker_type": "vehicle",
+      "inherits": "vehicle.action_for_vehicle",
+      "overloads": [
+        {
+          "params": {
+            "reference": {
+              "type": "physical_object",
+              "optional": false
+            },
+            "direction": {
+              "type": "headway_direction",
+              "optional": false
+            }
+          }
+        }
+      ]
+    },
+    "person.walk": {
+      "invoker_type": "person",
+      "inherits": "person.action_for_person",
+      "overloads": [
+        {
+          "params": {}
+        }
+      ]
+    },
+    "person.cross_lane": {
+      "invoker_type": "person",
+      "inherits": "person.action_for_person",
+      "overloads": [
+        {
+          "params": {
+            "lane":       { "type": "int",   "optional": false },
+            "side":  { "type": "side_left_right", "optional": true },
+            "speed":  { "type": "speed", "optional": true }
+          }
+        }
+      ]
+    }
+  },
+  "modifiers": {
+    "position": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "distance": {
+              "type": "length",
+              "optional": false
+            },
+            "time": {
+              "type": "time",
+              "optional": true
+            },
+            "ahead_of": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "behind": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "distance": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "distance": {
+              "type": "length",
+              "optional": false
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "lane": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "name": "index",
+          "params": {
+            "lane": { "type": "int", "optional": false },
+            "at": { "type": "at", "optional": true },
+            "movement_mode": { "type": "movement_mode", "optional": true, "default": "other" }
+          }
+        },
+        {
+          "name": "same_as",
+          "params": {
+            "same_as": { "type": "physical_object", "optional": false },
+            "at": { "type": "at", "optional": true },
+            "movement_mode": { "type": "movement_mode", "optional": true, "default": "other" }
+          }
+        },
+        {
+          "name": "side_of",
+          "params": {
+            "side_of": { "type": "physical_object", "optional": false },
+            "side":    { "type": "side_left_right", "optional": false },
+            "at":      { "type": "at", "optional": true },
+            "movement_mode": { "type": "movement_mode", "optional": true, "default": "other" }
+          }
+        },
+        {
+          "name": "right_of",
+          "params": {
+            "right_of": { "type": "physical_object", "optional": false },
+            "at":       { "type": "at", "optional": true },
+            "movement_mode": { "type": "movement_mode", "optional": true, "default": "other" }
+          }
+        },
+        {
+          "name": "left_of",
+          "params": {
+            "left_of": { "type": "physical_object", "optional": false },
+            "at":      { "type": "at", "optional": true },
+            "movement_mode": { "type": "movement_mode", "optional": true, "default": "other" }
+          }
+        }
+      ],
+      "rules": { "overloads_mutually_exclusive": true }
+    },
+    "keep_lane": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "lateral": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "distance":         { "type": "length",           "optional": false },
+            "left_of":          { "type": "physical_object",  "optional": true  },
+            "right_of":         { "type": "physical_object",  "optional": true  },
+            "same_as":          { "type": "physical_object",  "optional": true  },
+            "side_of":          { "type": "physical_object",  "optional": true  },
+            "side":             { "type": "side_left_right",  "optional": true  },
+            "measure_by":       { "type": "lat_measure_by",   "optional": true  },
+            "at":               { "type": "at",               "optional": true  },
+            "movement_mode":    { "type": "movement_mode",    "optional": true, "default": "other" },
+            "track":            { "type": "track",            "optional": true  }
+          },
+          "rules": {
+            "exactly_one_of": [
+              ["left_of", "right_of", "same_as", "side_of"]
+            ]
+          }
+        }
+      ]
+    },
+    "yaw": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "angle": {
+              "type": "angle",
+              "optional": false
+            },
+            "relative_to": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "measure_by": {
+              "type": "yaw_measure_by",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            }
+          }
+        }
+      ]
+    },
+    "orientation": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "yaw": {
+              "type": "angle",
+              "optional": true
+            },
+            "pitch": {
+              "type": "angle",
+              "optional": true
+            },
+            "roll": {
+              "type": "angle",
+              "optional": true
+            },
+            "relative_to": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "measured_by": {
+              "type": "orientation_measured_by",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            }
+          },
+          "rules": {
+            "at_least_one_of": [
+              [
+                "yaw",
+                "pitch",
+                "roll"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "along": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "route": {
+              "type": "route",
+              "optional": false
+            },
+            "start_offset": {
+              "type": "length",
+              "optional": true
+            },
+            "end_offset": {
+              "type": "length",
+              "optional": true,
+              "default": "0 m"
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "keep_position": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "along_trajectory": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "trajectory": {
+              "type": "trajectory",
+              "optional": false
+            },
+            "start_offset": {
+              "type": "length",
+              "optional": true
+            },
+            "end_offset": {
+              "type": "length",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "speed": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "name": "explicit",
+          "params": {
+            "speed": {
+              "type": "speed",
+              "optional": false
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        },
+        {
+          "name": "relative",
+          "params": {
+            "faster_than": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "slower_than": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "same_as": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          },
+          "rules": {
+            "exactly_one_of": [
+              [
+                "faster_than",
+                "slower_than",
+                "same_as"
+              ]
+            ]
+          }
+        }
+      ],
+      "rules": {
+        "overloads_mutually_exclusive": true
+      }
+    },
+    "acceleration": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "name": "explicit",
+          "params": {
+            "acceleration": {
+              "type": "acceleration",
+              "optional": false
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        },
+        {
+          "name": "relative",
+          "params": {
+            "faster_than": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "slower_than": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "same_as": {
+              "type": "physical_object",
+              "optional": true
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          },
+          "rules": {
+            "exactly_one_of": [
+              [
+                "faster_than",
+                "slower_than",
+                "same_as"
+              ]
+            ]
+          }
+        }
+      ],
+      "rules": {
+        "overloads_mutually_exclusive": true
+      }
+    },
+    "keep_speed": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "change_speed": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "speed": {
+              "type": "speed",
+              "optional": false
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true,
+              "default": "actual"
+            }
+          }
+        }
+      ]
+    },
+    "avoid_collisions": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "avoid": { "type": "bool", "optional": false }
+          }
+        }
+      ]
+    },
+    "physical_movement": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "option": {
+              "type": "movement_options",
+              "optional": false
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "change_lane": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "params": {
+            "lane": {
+              "type": "int",
+              "optional": true,
+              "default": 1
+            },
+            "side": {
+              "type": "side_left_right",
+              "optional": true,
+              "default": "left"
+            },
+            "at": {
+              "type": "at",
+              "optional": true
+            },
+            "movement_mode": {
+              "type": "movement_mode",
+              "optional": true,
+              "default": "other"
+            },
+            "track": {
+              "type": "track",
+              "optional": true
+            }
+          }
+        }
+      ]
+    },
+    "until": {
+      "applies_to": "movable_object.action_for_movable_object",
+      "variants": [
+        {
+          "name": "ttc_threshold",
+          "params": {
+            "reference": { "type": "physical_object", "optional": false },
+            "time":      { "type": "time",            "optional": false }
+          }
+        }
+      ]
+    }
+  }
+}
