@@ -3,15 +3,17 @@
 run_matching.py
 
 Läuft sowohl lokal (via CLI-Args) als auch als Kubernetes / AWS Batch Job
-(via Env-Vars).
+(via Env-Vars), und jetzt zusaetzlich als einzelner Docker-Container gegen
+Azure Blob Storage (via --azure / AZURE_MODE, analog zu worker.py).
 
-Input:  Parquet-Dateien auf S3 oder lokalem Dateisystem
+Input:  Parquet-Dateien auf S3, Azure Blob Storage oder lokalem Dateisystem
         (erzeugt von worker.py)
 
-Output: drei Parquet-Tabellen pro Shard, Hive-partitioniert für Athena:
+Output: drei Parquet-Tabellen pro Shard, Hive-partitioniert:
   results/match_hits/scenario=.../run_id=.../shard=XXXXX.parquet
   results/match_actor_frames/...
   results/match_pair_frames/...
+  (auf S3, Azure Blob Storage oder lokal, je nach Modus)
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from scenario_matching.analysis_stats.stats_windows import (
 )
 
 # --- Parquet-Source ---
-from parquet_source import LocalParquetSource, ParquetSource
+from parquet_source import LocalParquetSource, ParquetSource, AzureParquetSource
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,8 +156,15 @@ def _first_window(wbt0) -> Tuple[Optional[int], Optional[int]]:
     return None, None
 
 
+# Azure-Variante des ResultsWriter (siehe unten). Import bewusst erst hier,
+# NACH den Schemas/Helpers oben, da azure_results_writer.py diese re-importiert
+# ("from run_matching import HITS_SCHEMA, ..."). So bleibt der Zirkel-Import
+# zwischen den beiden Modulen auflösbar, egal welches Modul zuerst geladen wird.
+from azure_results_writer import AzureResultsWriter
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# ResultsWriter
+# ResultsWriter (S3 / lokal)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ResultsWriter:
@@ -392,14 +401,34 @@ def _build_source(
     verify: str,
     min_lanes: Optional[int],
     local: bool,
+    azure: bool = False,
+    azure_account: Optional[str] = None,
+    azure_key: Optional[str] = None,
+    azure_container: str = "parquets",
 ):
     if local:
-        if local:
-            resolved   = _resolve_prefix(base_prefix)
-            scenes_dir = str(resolved / "scenes")
-            print(f"[INFO] lokale Quelle: {scenes_dir}", flush=True)
-            return LocalParquetSource(scenes_dir=scenes_dir, min_lanes=min_lanes)
+        resolved   = _resolve_prefix(base_prefix)
+        scenes_dir = str(resolved / "scenes")
+        print(f"[INFO] lokale Quelle: {scenes_dir}", flush=True)
+        return LocalParquetSource(scenes_dir=scenes_dir, min_lanes=min_lanes)
 
+    if azure:
+        if not azure_account:
+            raise ValueError(
+                "Azure-Modus aktiv, aber AZURE_STORAGE_ACCOUNT ist nicht gesetzt."
+            )
+        print(
+            f"[INFO] Azure-Quelle: {azure_container}/{base_prefix}/scenes/ "
+            f"(account={azure_account})",
+            flush=True,
+        )
+        return AzureParquetSource(
+            account_name=azure_account,
+            account_key=azure_key,
+            container=azure_container,
+            base_prefix=base_prefix,
+            min_lanes=min_lanes,
+        )
 
     print(f"[INFO] S3-Quelle: s3://{bucket}/{base_prefix}/scenes/", flush=True)
     return ParquetSource(
@@ -443,6 +472,11 @@ def run_one_prefix(
     left_is_decreasing: bool,
     local: bool,
     segment_stats_mode: bool,
+    azure: bool = False,
+    azure_account: Optional[str] = None,
+    azure_key: Optional[str] = None,
+    azure_input_container: str = "parquets",
+    azure_results_container: str = "results",
 ) -> None:
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -481,17 +515,29 @@ def run_one_prefix(
 
     engine = MatchEngine(cfg=cfg, scn_constraints=scn, calls=calls)
 
-    # ResultsWriter
-    writer = ResultsWriter(
-        run_id=run_id,
-        scenario=os.path.basename(osc_file),
-        shard_index=shard_index,
-        bucket=results_bucket,
-        prefix=results_prefix,
-        endpoint_url=endpoint_url,
-        verify=verify,
-        local_dir=str(out_dir) if local else None,
-    )
+    # ResultsWriter: Azure oder S3/lokal, je nach Modus
+    if azure:
+        writer = AzureResultsWriter(
+            run_id=run_id,
+            scenario=os.path.basename(osc_file),
+            shard_index=shard_index,
+            account_name=azure_account,
+            account_key=azure_key,
+            container=azure_results_container,
+            prefix=results_prefix,
+            local_dir=str(out_dir) if local else None,
+        )
+    else:
+        writer = ResultsWriter(
+            run_id=run_id,
+            scenario=os.path.basename(osc_file),
+            shard_index=shard_index,
+            bucket=results_bucket,
+            prefix=results_prefix,
+            endpoint_url=endpoint_url,
+            verify=verify,
+            local_dir=str(out_dir) if local else None,
+        )
 
     # Datenquelle
     src = _build_source(
@@ -501,6 +547,10 @@ def run_one_prefix(
         verify=verify,
         min_lanes=cfg.min_lanes if not segment_stats_mode else None,
         local=local,
+        azure=azure,
+        azure_account=azure_account,
+        azure_key=azure_key,
+        azure_container=azure_input_container,
     )
 
     # segment_stats_mode: nur Metadaten schreiben
@@ -524,9 +574,8 @@ def run_one_prefix(
     processed  = 0
     total_hits = 0
 
-    print(src)
     for res in src:
-        print(res)
+
         if n_scenes_limit is not None and processed >= n_scenes_limit:
             break
 
@@ -595,7 +644,7 @@ def run_one_prefix(
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="OSC2 Szenario-Matcher -- schreibt Ergebnisse als Parquet fuer Athena"
+        description="OSC2 Szenario-Matcher -- schreibt Ergebnisse als Parquet"
     )
 
     ap.add_argument("--osc_prefix",
@@ -630,7 +679,20 @@ def main() -> int:
                                  _env_str("AWS_CA_BUNDLE", "")))
     _add_bool_opt(ap, "--local",
                   default=_env_bool("LOCAL_MODE", False),
-                  help="Lokale Parquet-Dateien statt S3.")
+                  help="Lokale Parquet-Dateien statt S3/Azure.")
+
+    # --- Azure ---
+    _add_bool_opt(ap, "--azure",
+                  default=_env_bool("AZURE_MODE", False),
+                  help="Azure Blob Storage statt S3 verwenden.")
+    ap.add_argument("--azure_account",
+                    default=_env_str("AZURE_STORAGE_ACCOUNT", ""))
+    ap.add_argument("--azure_key",
+                    default=_env_str("AZURE_STORAGE_KEY", ""))
+    ap.add_argument("--azure_input_container",
+                    default=_env_str("AZURE_INPUT_CONTAINER", "parquets"))
+    ap.add_argument("--azure_results_container",
+                    default=_env_str("AZURE_RESULTS_CONTAINER", "results"))
 
     ap.add_argument("--out_dir",
                     default=_env_str("OUT_DIR", "out_local"))
@@ -697,6 +759,11 @@ def main() -> int:
         left_is_decreasing=bool(args.left_is_decreasing),
         local=bool(args.local),
         segment_stats_mode=bool(args.segment_stats_mode),
+        azure=bool(args.azure),
+        azure_account=args.azure_account or None,
+        azure_key=args.azure_key or None,
+        azure_input_container=args.azure_input_container,
+        azure_results_container=args.azure_results_container,
     )
 
     return 0

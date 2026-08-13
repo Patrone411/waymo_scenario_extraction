@@ -1,17 +1,16 @@
 from pathlib import Path
-import os
 
-from run_matching import _first_window
+from run_matching import (
+    _build_source,
+    _first_window,
+)
 from osc2_parser.parser import OSCProgram
 from scenario_matching.matching.post.plan import build_block_plans
 from scenario_matching.matching.engine import MatchEngine
 from scenario_matching.harness import HarnessConfig
-from scenario_matching.analysis_stats.stats_windows import (
-    max_possible_windows,
-    count_windows,
-)
 from scenario_extraction.parquet_source import AzureParquetSource
-from azure_results_writer import AzureResultsWriter
+import os
+
 
 
 # ---------------------------------------------------------
@@ -27,19 +26,10 @@ OSC_FILE = (
     / "change_lane.osc"
 )
 
-# komplette Shard 00000, nicht nur die erste Szene
-BASE_PREFIX = "parquet/matcher_ci_test/00000"
 
-RESULTS_CONTAINER = "results"
-RESULTS_PREFIX = "results/matcher_ci_test"
-
-RUN_ID = "ci-azure-full-shard"
-SHARD_INDEX = 0
-
-EXPECTED_MIN_HITS = 11  # mind. ein Hit erwartet, exakter Wert je nach Shard-Inhalt anpassen
-
-
-def test_full_shard_matching_and_azure_upload():
+BASE_PREFIX = "parquet/matcher_ci_test-small/00000"
+EXPECTED_HITS = 2
+def test_known_scenario_produces_expected_hits():
 
     # -----------------------------------------------------
     # 1. OSC parsen
@@ -101,8 +91,6 @@ def test_full_shard_matching_and_azure_upload():
 
         # -----------------------------------------------------
         # 3. MatchEngine
-        #    (kein first_window_only -> volle Shard-Verarbeitung,
-        #    damit alle Hits/Fenster wie im echten Batch-Run erfasst werden)
         # -----------------------------------------------------
 
         cfg = HarnessConfig(
@@ -124,37 +112,26 @@ def test_full_shard_matching_and_azure_upload():
         )
 
         # -----------------------------------------------------
-        # 4. Azure ParquetSource (komplette Shard)
+        # 4. Azure ParquetSource
         # -----------------------------------------------------
 
+        
         src = AzureParquetSource(
             account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
             account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
             container="parquets",
             base_prefix=BASE_PREFIX,
-            min_lanes=prog.min_lanes,
+            min_lanes = prog.min_lanes
         )
+    
+        #src = next(iter(source), None)
 
         # -----------------------------------------------------
-        # 5. AzureResultsWriter fuer die drei Ergebnistabellen
+        # 5. Matching
         # -----------------------------------------------------
 
-        writer = AzureResultsWriter(
-            run_id=RUN_ID,
-            scenario=os.path.basename(str(OSC_FILE)),
-            shard_index=SHARD_INDEX,
-            account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
-            account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
-            container=RESULTS_CONTAINER,
-            prefix=RESULTS_PREFIX,
-        )
-
-        # -----------------------------------------------------
-        # 6. Matching ueber die komplette Shard
-        # -----------------------------------------------------
-
-        processed_scenes = 0
         total_hits = 0
+        processed_scenes = 0
 
         for res in src:
 
@@ -169,13 +146,9 @@ def test_full_shard_matching_and_azure_upload():
                 res.seg_meta_by_id,
             )
 
-            meta_any = next(iter(res.seg_meta_by_id.values()), None)
-            source_uri = getattr(meta_any, "source_uri", "<unknown>")
-            scene_id = Path(source_uri).stem
-
             batch = engine.process_loaded_features_with_plans(
                 plans=plans,
-                source_uri=source_uri,
+                source_uri="test",
                 collect_call_windows=True,
                 collect_modifier_stats=False,
             )
@@ -184,69 +157,34 @@ def test_full_shard_matching_and_azure_upload():
                 batch.block_hits or {}
             ).items():
 
-                plan = plans.get(block_label)
-                if plan is None:
-                    continue
-                minF = int(getattr(plan, "duration_min_frames", 1) or 1)
-
-                for (seg_id, _role_key), block_state in (
+                for (_seg_id, _role_key), block_state in (
                     hitmap or {}
                 ).items():
 
-                    roles = dict(getattr(block_state, "roles", {}) or {})
-                    feats = res.feats_by_seg.get(seg_id)
-                    if feats is None:
-                        continue
-
-                    wbt0 = getattr(block_state, "windows_by_t0", None)
-                    t0, t1 = _first_window(wbt0)
-
-                    if t0 is None:
-                        continue
-
-                    T = int(getattr(feats, "T", 91) or 91)
-                    maxF = int(getattr(plan, "duration_max_frames", None) or T)
-                    nwin = int(count_windows(wbt0))
-                    nposs = int(max_possible_windows(T, minF, maxF)) if T else 0
-
-                    writer.add_hit(
-                        scene_id=scene_id,
-                        segment_id=seg_id,
-                        block_label=block_label,
-                        roles=roles,
-                        t0=t0,
-                        t1=t1,
-                        n_windows=nwin,
-                        n_possible_windows=nposs,
-                        source_uri=source_uri,
-                        feats=feats,
+                    t0, t1 = _first_window(
+                        getattr(
+                            block_state,
+                            "windows_by_t0",
+                            None,
+                        )
                     )
 
-                    total_hits += 1
+                    if t0 is not None:
+                        total_hits += 1
 
             engine.clear_features()
 
         # -----------------------------------------------------
-        # 7. Ergebnisse nach Azure schreiben
-        # -----------------------------------------------------
-
-        written = writer.flush()
-
-        # -----------------------------------------------------
-        # 8. Assertions
+        # 6. Assertions
         # -----------------------------------------------------
 
         assert processed_scenes > 0, (
-            "Keine Testszenen aus Azure Parquet geladen"
+            "Keine Testszene aus Azure Parquet geladen"
         )
 
-        assert total_hits >= EXPECTED_MIN_HITS, (
-            f"Erwartet mindestens {EXPECTED_MIN_HITS} Hit(s), "
-            f"aber Matcher produzierte {total_hits}"
-        )
-
-        assert "match_hits" in written, (
-            "match_hits wurde nicht nach Azure geschrieben (keine Hits gefunden?)"
+        assert total_hits == EXPECTED_HITS, (
+            f"Expected {EXPECTED_HITS} hits, "
+            f"but matcher produced {total_hits}"
         )
 
     finally:

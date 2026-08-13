@@ -129,7 +129,7 @@ def test_full_shard_matching_and_azure_upload():
 
         src = AzureParquetSource(
             account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
-            account_key=os.environ["AZURE_STORAGE_KEY"],
+            account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
             container="parquets",
             base_prefix=BASE_PREFIX,
             min_lanes=prog.min_lanes,
@@ -144,7 +144,7 @@ def test_full_shard_matching_and_azure_upload():
             scenario=os.path.basename(str(OSC_FILE)),
             shard_index=SHARD_INDEX,
             account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
-            account_key=os.environ["AZURE_STORAGE_KEY"],
+            account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
             container=RESULTS_CONTAINER,
             prefix=RESULTS_PREFIX,
         )
