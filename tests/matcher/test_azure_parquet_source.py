@@ -13,7 +13,7 @@ from scenario_extraction.parquet_source import AzureParquetSource
 def test_azure_parquet_source_reads_real_blob():
     source = AzureParquetSource(
         account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
-        account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
+        account_key=os.environ["AZURE_STORAGE_KEY"],
         container="parquets",
         base_prefix="parquet/matcher_ci_test/00000",
     )

@@ -118,7 +118,7 @@ def test_known_scenario_produces_expected_hits():
         
         src = AzureParquetSource(
             account_name=os.environ["AZURE_STORAGE_ACCOUNT"],
-            account_key=os.environ["AZURE_STORAGE_ACCOUNT_KEY"],
+            account_key=os.environ["AZURE_STORAGE_KEY"],
             container="parquets",
             base_prefix=BASE_PREFIX,
             min_lanes = prog.min_lanes
