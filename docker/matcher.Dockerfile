@@ -8,17 +8,17 @@ RUN apt-get update \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements_matcher.txt .
+COPY scenario_extraction/requirements_matcher.txt .
 RUN pip install --no-cache-dir -r requirements_matcher.txt
 
 # Lokale Module
-COPY osc2_parser/ ./osc2_parser/
-COPY scenario_matching/ ./scenario_matching/
+COPY scenario_extraction/osc2_parser/ ./osc2_parser/
+COPY scenario_extraction/scenario_matching/ ./scenario_matching/
 COPY external/ ./external/
 
 # Matcher
-COPY parquet_source.py .
-COPY azure_results_writer.py .
-COPY run_matching.py .
+COPY scenario_extraction/parquet_source.py .
+COPY scenario_extraction/azure_results_writer.py .
+COPY scenario_extraction/run_matching.py .
 
 CMD ["python", "run_matching.py"]
