@@ -23,8 +23,14 @@ from typing import Optional
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from run_matching import HITS_SCHEMA, ACTOR_FRAMES_SCHEMA, PAIR_FRAMES_SCHEMA, _safe_val, _safe_pair, _safe_pair_str
-
+from matcher_utils import (
+    HITS_SCHEMA,
+    ACTOR_FRAMES_SCHEMA,
+    PAIR_FRAMES_SCHEMA,
+    _safe_val,
+    _safe_pair,
+    _safe_pair_str,
+)
 
 def get_blob_credential(account_key: Optional[str]):
     """

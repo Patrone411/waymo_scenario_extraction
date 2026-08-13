@@ -11,14 +11,12 @@ RUN apt-get update \
 COPY scenario_extraction/requirements_matcher.txt .
 RUN pip install --no-cache-dir -r requirements_matcher.txt
 
-# Lokale Module
-COPY scenario_extraction/osc2_parser/ ./osc2_parser/
-COPY scenario_extraction/scenario_matching/ ./scenario_matching/
+# scenario_extraction als Python-Root
+COPY scenario_extraction/ ./
+
+# Externe Abhängigkeiten
 COPY external/ ./external/
 
-# Matcher
-COPY scenario_extraction/parquet_source.py .
-COPY scenario_extraction/azure_results_writer.py .
-COPY scenario_extraction/run_matching.py .
+ENV PYTHONPATH=/app
 
 CMD ["python", "run_matching.py"]
