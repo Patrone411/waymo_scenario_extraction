@@ -4,7 +4,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 from scenario_extraction.parquet_source import ParquetSource, SegmentFeatures, _decode_sparse
 
-# ── read directly from local file (no S3 needed) ──────────────────────────
+# ── read directly from local file ──────────────────────────
 path = next(Path("test_output/scenes").glob("*.parquet"))
 df   = pq.read_table(path).to_pandas()
 

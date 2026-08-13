@@ -2,17 +2,23 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    libgeos-dev \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgeos-dev \
+        libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements_matcher.txt .
 RUN pip install --no-cache-dir -r requirements_matcher.txt
 
-COPY feature_extraction/ ./feature_extraction/
+# Lokale Module
+COPY osc2_parser/ ./osc2_parser/
+COPY scenario_matching/ ./scenario_matching/
 COPY external/ ./external/
-COPY scenario_extraction/ ./scenario_extraction/
-COPY test_output/ ./test_output/
 
-WORKDIR /app/scenario_extraction
+# Matcher
+COPY parquet_source.py .
+COPY azure_results_writer.py .
+COPY run_matching.py .
+
 CMD ["python", "run_matching.py"]
