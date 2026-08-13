@@ -2,6 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Set, Optional
+from pathlib import Path
+
 
 from osc2_parser.scenario_config import MiniOSC2ScenarioConfig as ScenarioCfg
 from osc2_parser.config_init import ConfigInit
@@ -51,7 +53,14 @@ class OSCProgram:
         #print(scenarios_list)
 
         # Semantics registry + validator
-        REGISTRY_PATH = "osc2_parser/srunner/osc2/semantics/osc_semantics_registry.json"
+        REGISTRY_PATH = (
+            Path(__file__).resolve().parent.parent
+            / "srunner"
+            / "osc2"
+            / "semantics"
+            / "osc_semantics_registry.json"
+        )
+        #REGISTRY_PATH = "osc2_parser/srunner/osc2/semantics/osc_semantics_registry.json"
         sem_registry = SemanticsRegistry.from_file(REGISTRY_PATH)
         validator = SemanticValidator(sem_registry, type_of_expr=infer_type, debug_types=False)
 
