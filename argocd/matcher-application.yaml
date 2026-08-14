@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: scenario-matcher
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Patrone411/waymo-k8s-manifests.git
+    targetRevision: main
+    path: matcher
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: matcher
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

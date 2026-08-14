@@ -60,7 +60,6 @@ from matcher_utils import (
 
 
 
-
 # Azure-Variante des ResultsWriter (siehe unten). Import bewusst erst hier,
 # NACH den Schemas/Helpers oben, da azure_results_writer.py diese re-importiert
 # ("from run_matching import HITS_SCHEMA, ..."). So bleibt der Zirkel-Import
@@ -626,8 +625,12 @@ def main() -> int:
     # base_prefix und shard bestimmen
     if args.base_prefix:
         base_prefix = args.base_prefix
-        shard_tag   = "manual"
-        shard_index = 0
+        if args.job_index >= 0:
+            shard_index = int(args.start_offset) + int(args.job_index)
+            shard_tag   = f"{shard_index:05d}"
+        else:
+            shard_index = 0
+            shard_tag   = "manual"
     elif args.job_index >= 0 and args.max_shard_index >= 0:
         shard_index = int(args.start_offset) + int(args.job_index)
         if shard_index > int(args.max_shard_index):
